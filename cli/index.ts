@@ -7,16 +7,18 @@ import { loadConfig, saveConfig, getConfigDir } from "../src/config/loader";
 import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
-import { installWorkspaceSync } from "../install/index";
+import { installWorkspaceSync, SUPPORTED_AGENTS } from "../install/index";
 import { saveUndoSnapshot, performUndo } from "../src/config/undo";
 import { discoverProjectCandidates } from "../src/discovery";
+
+const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
 const program = new Command();
 
 program
   .name("workspace-sync")
   .description("WorkspaceSync MCP management command-line interface")
-  .version("0.1.0");
+  .version(pkg.version);
 
 program
   .command("init")
@@ -92,6 +94,68 @@ program
           console.log(chalk.green(`✓ Registered ${selected.length} project(s): ${selected.map((c) => c.name).join(", ")}`));
         }
       }
+    }
+  });
+
+program
+  .command("setup")
+  .description("One-command project setup: detect workspace, initialize config, discover projects, and verify (recommended). Does not configure any AI agent — see 'install [agent]' for that.")
+  .action(async () => {
+    try {
+      console.log(chalk.bold("\nWorkspaceSync Setup"));
+      console.log(chalk.gray("==========================================="));
+
+      const configDir = getConfigDir();
+      let config: any;
+      if (fs.existsSync(configDir)) {
+        console.log(chalk.gray(`✓ Existing WorkspaceSync configuration found — preserving it.`));
+        config = loadConfig();
+      } else {
+        config = {
+          workspace: { schemaVersion: 1 as const, name: path.basename(process.cwd()) },
+          projects: {},
+          environments: {},
+          policies: {},
+        };
+        saveConfig(config);
+        console.log(chalk.green(`✓ Initialized workspace "${config.workspace.name}"`));
+      }
+
+      const alreadyRegistered = new Set(Object.keys(config.projects));
+      const candidates = discoverProjectCandidates(process.cwd(), alreadyRegistered);
+      if (candidates.length > 0) {
+        for (const c of candidates) {
+          config.projects[c.name] = { localPath: c.localPath };
+          config.policies[c.name] = {
+            readLocal: true,
+            writeLocal: true,
+            readTesting: true,
+            writeTesting: false,
+            readProduction: true,
+            writeProduction: false,
+          };
+        }
+        saveConfig(config);
+        console.log(chalk.green(`✓ Auto-registered ${candidates.length} project(s): ${candidates.map((c) => c.name).join(", ")}`));
+      } else {
+        console.log(chalk.gray("✓ No new project directories detected."));
+      }
+
+      generateAgentMemory(config);
+
+      console.log(chalk.bold("\nVerifying setup:"));
+      console.log(chalk.green("  ✓ Config directory present (.workspace-sync)"));
+      console.log(chalk.green(`  ✓ Workspace defined: ${config.workspace.name}`));
+      console.log(chalk.green(`  ✓ Projects registered: ${Object.keys(config.projects).length}`));
+
+      console.log(chalk.bold.green("\n✓ WorkspaceSync project setup complete!"));
+      console.log(
+        chalk.gray(
+          `Next: run the install command for your AI agent (see README § Agent Installation), e.g. 'npx workspace-sync install claude'. Or 'workspace-sync link-testing' / 'link-production' to connect VPS environments.\n`
+        )
+      );
+    } catch (err: any) {
+      console.error(chalk.red(`Setup Error: ${err.message}`));
     }
   });
 
@@ -361,13 +425,16 @@ program
   });
 
 program
-  .command("install")
-  .description("Install skill files and workspace-level MCP settings configuration")
-  .action(() => {
+  .command("install [agent]")
+  .description(
+    `Install skills and MCP configuration for an AI agent (${SUPPORTED_AGENTS.join(", ")}; default: vscode)`
+  )
+  .action((agent) => {
     try {
-      installWorkspaceSync();
+      installWorkspaceSync(process.cwd(), agent);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
+      process.exitCode = 1;
     }
   });
 
@@ -390,6 +457,28 @@ program
 
       console.log(chalk.green("✓ Config directory present (.workspace-sync)"));
       console.log(chalk.green(`✓ Workspace defined: ${config.workspace.name}`));
+
+      const versionStampPath = path.join(process.cwd(), ".agents", "skills", ".workspace-sync-version");
+      if (fs.existsSync(path.join(process.cwd(), ".agents", "skills"))) {
+        if (fs.existsSync(versionStampPath)) {
+          const installedVersion = fs.readFileSync(versionStampPath, "utf-8").trim();
+          if (installedVersion !== pkg.version) {
+            console.log(
+              chalk.yellow(
+                `⚠ Installed skills are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync install [agent]' to refresh.`
+              )
+            );
+          } else {
+            console.log(chalk.green(`✓ Installed skills are up to date (v${installedVersion})`));
+          }
+        } else {
+          console.log(
+            chalk.yellow(
+              `⚠ Installed skills have no version stamp (pre-upgrade). Run 'workspace-sync install [agent]' to refresh.`
+            )
+          );
+        }
+      }
 
       const projects = Object.keys(config.projects);
       console.log(`✓ Projects registered: ${projects.length}`);

@@ -6,6 +6,58 @@ If you find this project useful, consider giving it a ⭐ on GitHub!
 
 ---
 
+## ⚡ Quick Setup (Recommended)
+
+Setup is two explicit steps: install the **project**, then install the **AI agent integration** for whichever agent you use. Keeping these separate means `setup` never guesses or writes agent-specific config on your behalf.
+
+### Step 1: Install the project
+
+```bash
+npx workspace-sync setup
+```
+
+This one command:
+- Detects your current workspace and any local project folders (via `package.json`, `.git`, `go.mod`, and similar markers).
+- Initializes WorkspaceSync configuration — or safely preserves it if one already exists.
+- Auto-registers discovered projects and generates `AGENT_MEMORY.md`.
+- Verifies the result — all with minimal user interaction.
+
+`setup` **only installs the project.** It does not write any AI agent or MCP configuration — that's Step 2.
+
+### Step 2: Install your AI agent integration
+
+Run the install command for whichever AI coding agent you use — see the [🔌 Agent Installation](#-agent-installation) table below. For example:
+
+```bash
+npx workspace-sync install claude
+```
+
+This writes the MCP server registration for that specific agent and deploys the WorkspaceSync skills to `.agents/skills/`.
+
+> [!TIP]
+> Already set up but skills feel out of date after upgrading WorkspaceSync? Re-run the Step 2 install command for your agent — `workspace-sync doctor` will warn you if your installed skills are stale.
+
+The individual commands documented below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
+
+---
+
+## 🔌 Agent Installation
+
+After running `npx workspace-sync setup` (Step 1 above), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
+
+| Platform | Command |
+| :------- | :------ |
+| VS Code / GitHub Copilot | `npx workspace-sync install` |
+| Claude Code | `npx workspace-sync install claude` |
+| Cursor | `npx workspace-sync install cursor` |
+| Gemini CLI | `npx workspace-sync install gemini` |
+| Google Antigravity | `npx workspace-sync install antigravity` |
+| Agent Skills (generic/cross-framework) | `npx workspace-sync install agents` |
+
+Each command is safe to re-run at any time — it merges into any existing MCP config rather than overwriting it, and refreshes skills to the currently installed WorkspaceSync version. Additional agents can be added once their MCP configuration convention is confirmed — open an issue if you'd like one supported.
+
+---
+
 ## 📋 Requirements
 
 Before installing WorkspaceSync, ensure your environment meets the following requirements:
@@ -34,12 +86,18 @@ Verify that the CLI binary is available:
 
 ```bash
 workspace-sync --version
-# Output: workspace-sync 0.1.0
+# Output: 0.2.0
 ```
+
+> [!IMPORTANT]
+> All commands in this document are run as `workspace-sync <command>` directly in your terminal — **never** with a leading slash (e.g. `/workspace-sync status`). A leading slash is only meaningful inside certain AI chat interfaces as a skill-trigger shortcut; typed into PowerShell, Bash, or any standard shell it is not a valid command and will fail (`CommandNotFoundException` in PowerShell, `command not found` in Bash).
 
 ---
 
-## 🏁 Getting Started
+## 🏁 Manual / Advanced Setup
+
+> [!TIP]
+> Most users should use `npx workspace-sync setup` (see [Quick Setup](#-quick-setup-recommended) above) instead of the steps below. Follow these steps only if you need fine-grained, manual control over each part of the configuration.
 
 Follow these steps in your workspace root directory to configure WorkspaceSync:
 
@@ -78,10 +136,10 @@ workspace-sync doctor
 
 ### Step 5: Install Agent Skills & IDE Settings
 
-Configure `.vscode/mcp.json` and deploy modular AI agent skills into `.agents/skills/`:
+Configure MCP settings and deploy modular AI agent skills for your specific AI agent — see the [🔌 Agent Installation](#-agent-installation) table for the full list:
 
 ```bash
-workspace-sync install
+workspace-sync install claude   # or cursor, gemini, antigravity, agents — omit for VS Code
 ```
 
 Your workspace is now fully configured and ready for your AI assistant.
@@ -90,12 +148,13 @@ Your workspace is now fully configured and ready for your AI assistant.
 
 ## 🛠️ Command Reference
 
-All commands are executed from your workspace root directory.
+All commands are executed from your workspace root directory. Most users only need `workspace-sync setup` plus the matching `install <agent>` command; the rest are for advanced/manual use.
 
 ### Command Overview Table
 
 | Command                                                               | Description                                                               |
 | :-------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| [`workspace-sync setup`](#0-workspace-sync-setup)                     | One-command **project** setup: detect, initialize, discover, verify (recommended). |
 | [`workspace-sync init`](#1-workspace-sync-init)                       | Initialize the `.workspace-sync/` configuration directory.                |
 | [`workspace-sync status`](#2-workspace-sync-status)                   | Display a live summary of all registered projects and environments.       |
 | [`workspace-sync add-project`](#3-workspace-sync-add-project)         | Register a local project directory in the workspace configuration map.    |
@@ -104,13 +163,28 @@ All commands are executed from your workspace root directory.
 | [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias.                |
 | [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias (read-only). |
 | [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Run diagnostics on local paths and SSH host connectivity.                 |
-| [`workspace-sync install`](#9-workspace-sync-install)                 | Write VS Code MCP settings and deploy modular AI agent skills.            |
+| [`workspace-sync install [agent]`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
 | [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
 | [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
 
 ---
 
 ### Command Details
+
+> ### 0. `workspace-sync setup`
+>
+> 📌 **Purpose:** One-command **project** setup (recommended). Detects the current workspace and project folders, initializes `.workspace-sync/` (or preserves it if it already exists), auto-registers detected projects, and generates `AGENT_MEMORY.md` — all with minimal interaction. Does **not** write any AI agent or MCP configuration; run `workspace-sync install [agent]` separately for that (see [🔌 Agent Installation](#-agent-installation)).
+>
+> 💻 **Syntax:**
+>
+> ```bash
+> npx workspace-sync setup
+> ```
+>
+> 💡 **Note:**
+> Safe to re-run at any time — existing configuration and manually registered projects are preserved, not overwritten.
+
+---
 
 > ### 1. `workspace-sync init`
 >
@@ -285,15 +359,28 @@ All commands are executed from your workspace root directory.
 
 ---
 
-> ### 9. `workspace-sync install`
+> ### 9. `workspace-sync install [agent]`
 >
-> 📌 **Purpose:** Write VS Code MCP settings (`.vscode/mcp.json`) and deploy task-specific AI agent skills into `.agents/skills/`.
+> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into `.agents/skills/`. See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `[agent]` targets VS Code (`.vscode/mcp.json`) for backward compatibility.
 >
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync install
+> workspace-sync install [agent]
 > ```
+>
+> 📥 **Arguments:**
+>
+> - `[agent]` (optional): One of `vscode` (default), `claude`, `cursor`, `gemini`, `antigravity`, `agents`.
+>
+> 📝 **Example:**
+>
+> ```bash
+> workspace-sync install claude
+> ```
+>
+> 💡 **Note:**
+> Merges into any existing MCP config file rather than overwriting it, and is safe to re-run after an upgrade to refresh skills (`workspace-sync doctor` warns if they're stale).
 
 ---
 

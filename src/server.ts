@@ -18,11 +18,14 @@ import {
 } from "./tools/remote";
 import { getLocalGitInfo } from "./tools/local";
 import { logAudit } from "./audit/logger";
+import * as path from "path";
+
+const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
 const server = new Server(
   {
     name: "workspace-sync",
-    version: "0.1.0",
+    version: pkg.version,
   },
   {
     capabilities: {
