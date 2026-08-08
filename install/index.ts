@@ -57,6 +57,39 @@ const VERIFIED_SKILLS_TARGETS: Partial<Record<AgentId, (targetDir: string) => st
   claude: (targetDir) => path.join(targetDir, ".claude", "skills"),
 };
 
+// Tracks which agents `install`/`update` has been run for, so `workspace-sync update`
+// knows which agents to refresh without the caller having to name them again.
+function getInstalledAgentsManifestPath(targetDir: string): string {
+  return path.join(targetDir, ".workspace-sync", "installed-agents.json");
+}
+
+export function getInstalledAgents(targetDir: string = process.cwd()): AgentId[] {
+  const manifestPath = getInstalledAgentsManifestPath(targetDir);
+  if (!fs.existsSync(manifestPath)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    return Array.isArray(data.agents) ? data.agents : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordInstalledAgent(agentId: AgentId, targetDir: string): void {
+  const manifestPath = getInstalledAgentsManifestPath(targetDir);
+  const manifestDir = path.dirname(manifestPath);
+  if (!fs.existsSync(manifestDir)) {
+    fs.mkdirSync(manifestDir, { recursive: true });
+  }
+
+  const agents = new Set(getInstalledAgents(targetDir));
+  agents.add(agentId);
+  fs.writeFileSync(
+    manifestPath,
+    JSON.stringify({ agents: [...agents] }, null, 2),
+    "utf-8"
+  );
+}
+
 function resolveSkillsDir(agentId: AgentId, targetDir: string): string {
   const verified = VERIFIED_SKILLS_TARGETS[agentId];
   if (verified) return verified(targetDir);
@@ -338,4 +371,8 @@ Call \`compare_environments\`/\`remote_git_revision\` directly — this skill fi
 
   // Version stamp so `doctor` can detect stale skills after a package upgrade.
   fs.writeFileSync(path.join(skillsDir, ".workspace-sync-version"), pkg.version, "utf-8");
+
+  // Remember this agent so `workspace-sync update` can refresh it later without
+  // the caller having to re-specify every agent that was ever installed.
+  recordInstalledAgent(agentId, targetDir);
 }

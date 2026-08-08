@@ -45,8 +45,19 @@ This writes the MCP server registration for that specific agent and deploys the 
 > [!IMPORTANT]
 > These commands intentionally do **not** use `npx` — many AI agents cannot invoke `npx` from inside their own tool-call sandbox. Install WorkspaceSync globally first (`npm install -g workspace-sync`, see [Installation](#-installation) below) so the plain `workspace-sync` binary is directly available, then run the Step 2 command from within your agent.
 
-> [!TIP]
-> Already set up but skills feel out of date after upgrading WorkspaceSync? Re-run the Step 2 install command for your agent — `workspace-sync doctor` will warn you if your installed skills are stale.
+### Keeping your workspace up to date
+
+After the two steps above, your workspace is fully set up. Whenever you upgrade WorkspaceSync (`npm install -g workspace-sync@latest`) or just want to make sure everything is current, run:
+
+```bash
+npx workspace-sync update
+```
+
+This is a **project setup/maintenance command**, not something you run from inside your AI agent. It:
+- Regenerates `AGENT_MEMORY.md` from your current workspace configuration.
+- Re-syncs skills and MCP config for **every AI agent you've previously installed** — it remembers which agents you set up (via `.workspace-sync/installed-agents.json`), so you don't need to re-list them.
+
+Safe to re-run at any time; if no agent has been installed yet, it tells you to run Step 2 first. `workspace-sync doctor` will also warn you when installed skills are stale and an `update` is due.
 
 The individual commands documented below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
 

@@ -7,7 +7,7 @@ import { loadConfig, saveConfig, getConfigDir } from "../src/config/loader";
 import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
-import { installWorkspaceSync, SUPPORTED_AGENTS, PLATFORMS } from "../install/index";
+import { installWorkspaceSync, getInstalledAgents, SUPPORTED_AGENTS, PLATFORMS } from "../install/index";
 import { saveUndoSnapshot, performUndo } from "../src/config/undo";
 import { discoverProjectCandidates } from "../src/discovery";
 
@@ -473,6 +473,37 @@ program
   });
 
 program
+  .command("update")
+  .description("Refresh workspace config, AGENT_MEMORY.md, and previously installed agent skills/MCP config to the current WorkspaceSync version")
+  .action(async () => {
+    try {
+      const config = loadConfig();
+      generateAgentMemory(config);
+      console.log(chalk.green("✓ Regenerated AGENT_MEMORY.md"));
+
+      const agents = getInstalledAgents(process.cwd());
+      if (agents.length === 0) {
+        console.log(
+          chalk.yellow(
+            "\n⚠ No previously installed agents found. Run 'workspace-sync install [agent]' at least once before using 'update'."
+          )
+        );
+        return;
+      }
+
+      console.log(chalk.bold(`\nRefreshing ${agents.length} installed agent(s): ${agents.join(", ")}`));
+      for (const agent of agents) {
+        installWorkspaceSync(process.cwd(), agent);
+      }
+
+      console.log(chalk.bold.green(`\n✓ WorkspaceSync update complete (v${pkg.version})`));
+    } catch (err: any) {
+      console.error(chalk.red(`Update Error: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command("mcp")
   .description("Start the stdio Model Context Protocol (MCP) server")
   .action(() => {
@@ -499,7 +530,7 @@ program
           if (installedVersion !== pkg.version) {
             console.log(
               chalk.yellow(
-                `⚠ Installed skills are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync install [agent]' to refresh.`
+                `⚠ Installed skills are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync update' to refresh.`
               )
             );
           } else {
