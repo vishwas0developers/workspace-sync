@@ -1,6 +1,6 @@
 {
   "name": "workspace-sync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Security-hardened local Model Context Protocol (MCP) server for multi-project workspaces linked with Testing/Production VPS",
   "main": "dist/src/server.js",
   "bin": {
