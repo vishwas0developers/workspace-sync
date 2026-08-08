@@ -7,6 +7,7 @@ import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
 import { installWorkspaceSync } from "../install/index";
+import { saveUndoSnapshot, performUndo } from "../src/config/undo";
 
 const program = new Command();
 
@@ -54,7 +55,7 @@ program
 
       const projects = Object.keys(config.projects);
       if (projects.length === 0) {
-        console.log(chalk.yellow("No projects registered. Run 'workspace-sync add-project'"));
+        console.log(chalk.yellow("No projects registered. Run 'workspace-sync add-project \"<name>\" \"<localPath>\"'"));
         return;
       }
 
@@ -97,11 +98,14 @@ program
 
 program
   .command("add-project <name> <localPath>")
+  .usage('"<name>" "<localPath>" [options]')
   .description("Add a local project folder to the workspace orchestration")
   .option("-g, --git <repository>", "Git repository name/url")
   .action((name, localPath, options) => {
     try {
       const config = loadConfig();
+      saveUndoSnapshot("add-project", `Add project "${name}"`);
+
       config.projects[name] = {
         localPath,
         git: options.git || undefined,
@@ -126,6 +130,7 @@ program
 
 program
   .command("link-testing <project> <sshAlias> <remotePath>")
+  .usage('"<project>" "<sshAlias>" "<remotePath>"')
   .description("Link testing environment to project")
   .action((project, sshAlias, remotePath) => {
     try {
@@ -134,6 +139,8 @@ program
         console.error(chalk.red(`Error: Project '${project}' does not exist.`));
         return;
       }
+
+      saveUndoSnapshot("link-testing", `Link testing environment for project "${project}"`);
 
       if (!config.environments[project]) {
         config.environments[project] = {};
@@ -154,6 +161,7 @@ program
 
 program
   .command("link-production <project> <sshAlias> <remotePath>")
+  .usage('"<project>" "<sshAlias>" "<remotePath>"')
   .description("Link production environment to project")
   .action((project, sshAlias, remotePath) => {
     try {
@@ -162,6 +170,8 @@ program
         console.error(chalk.red(`Error: Project '${project}' does not exist.`));
         return;
       }
+
+      saveUndoSnapshot("link-production", `Link production environment for project "${project}"`);
 
       if (!config.environments[project]) {
         config.environments[project] = {};
@@ -182,6 +192,7 @@ program
 
 program
   .command("remove-project <project>")
+  .usage('"<project>" [options]')
   .description("Completely remove project metadata and configuration from workspace")
   .option("-y, --yes", "Skip confirmation prompt")
   .action((project, options) => {
@@ -206,6 +217,7 @@ program
       }
 
       const localPath = config.projects[targetProject].localPath;
+      saveUndoSnapshot("remove-project", `Remove project "${targetProject}"`);
 
       const proceed = () => {
         delete config.projects[targetProject];
@@ -240,6 +252,7 @@ program
 
 program
   .command("rename-project <currentName> <newName>")
+  .usage('"<currentName>" "<newName>"')
   .description("Rename an existing registered project configuration")
   .action((currentName, newName) => {
     try {
@@ -259,6 +272,8 @@ program
         return;
       }
 
+      saveUndoSnapshot("rename-project", `Rename project "${currentName}" to "${newName}"`);
+
       // Perform rename by migrating data keys
       config.projects[newName] = config.projects[currentName];
       delete config.projects[currentName];
@@ -276,6 +291,19 @@ program
       saveConfig(config);
       generateAgentMemory(config);
       console.log(chalk.green(`✓ Project '${currentName}' successfully renamed to '${newName}'.`));
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+    }
+  });
+
+program
+  .command("undo")
+  .usage("[options]")
+  .description("One-step rollback of the last reversible WorkspaceSync operation")
+  .option("-y, --yes", "Skip confirmation prompt")
+  .action(async (options) => {
+    try {
+      await performUndo(options);
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
     }

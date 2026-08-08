@@ -20,8 +20,9 @@ This document contains the technical architecture, internal implementation detai
 │  ┌─────────────┐            │  │  projects.json     │  │ │
 │  │    CLI      │──writes───►│  │  environments.json │  │ │
 │  │  workspace- │            │  │  policies.json     │  │ │
-│  │  sync init  │            │  │  AGENT_MEMORY.md   │  │ │
-│  └─────────────┘            │  │  logs/             │  │ │
+│  │  sync init  │            │  │  .undo.json        │  │ │
+│  └─────────────┘            │  │  AGENT_MEMORY.md   │  │ │
+│                             │  │  logs/             │  │ │
 │                             │  └────────────────────┘  │ │
 │                             │                          │ │
 │                             │  Security Layer:         │ │
@@ -97,6 +98,22 @@ Configuration files are located in `.workspace-sync/` in the workspace root.
 }
 ```
 
+### `.undo.json`
+Stores the single-step backup configuration and operation details before executing any state changes. Cleared automatically upon execution of the `undo` command.
+```json
+{
+  "timestamp": "2026-08-08T09:30:00.000Z",
+  "operation": "remove-project",
+  "description": "Remove project \"admin\"",
+  "config": {
+    "workspace": { "schemaVersion": 1, "name": "ITI-Career" },
+    "projects": {},
+    "environments": {},
+    "policies": {}
+  }
+}
+```
+
 ---
 
 ## MCP Tools Protocol & Implementation
@@ -106,6 +123,7 @@ The stdio MCP server defines the following schemas for request handling:
 ### Tools List
 
 - `workspace_context`: Retrieves the overall projects and environments registry map.
+- `workspace_undo`: Restores the previous config state from `.undo.json` atomically.
 - `local_git_status`: Checks current branch and revision hashes locally.
 - `compare_environments`: Formulates Git commit differences between VPS environments.
 - `remote_tree` / `remote_file_read`: Safe read-only file system operations on the remote target.
@@ -134,5 +152,5 @@ npm run build
 ### Tests
 Runs the Node.js test runner against compiled test suites:
 ```bash
-node --test dist/src/test/remove-project.test.js
+node --test dist/src/test/remove-project.test.js dist/src/test/undo.test.js
 ```

@@ -1,199 +1,222 @@
 # WorkspaceSync
 
-> **Security-hardened local Model Context Protocol (MCP) server** that gives AI coding assistants a reliable, persistent map of your multi-project workspace and testing/production servers—without ever exposing your SSH keys or credentials.
+> Security-hardened local Model Context Protocol (MCP) server & CLI tool that provides AI coding assistants with a persistent map of your workspace projects and remote servers over SSH aliases.
 
-```mermaid
-graph TD
-    A[Install: npm install -g] --> B[Initialize: init]
-    B --> C[Add Project: add-project]
-    C --> D[Link Environments: link-testing / link-production]
-    D --> E[Verify: doctor]
-    E --> F[Install Agent Config: install]
-    F --> G[Run MCP / Use with Agent]
-    G -.-> H[Revert Last Action: undo]
-```
+For complete installation, prerequisite checks, and initial workspace setup, see the **[SETUP.md](SETUP.md)** guide.  
+For technical architecture, MCP tool schemas, and internal developer notes, see **[docs/DEVELOPER.md](docs/DEVELOPER.md)**.  
+For contribution guidelines, see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ---
 
-## 1. What WorkspaceSync Is & How It Works
+## Command Reference
 
-WorkspaceSync maps your local project paths and links them to remote servers via SSH aliases. It runs as an MCP stdio server that your IDE's AI assistant (such as Cline, Claude, or VS Code) connects to. This allows the agent to check deployment states, query service logs, and perform comparisons without direct access to your credentials.
+All commands are executed from your workspace root directory.
 
-### Conceptual Map
-```
-Workspace (Root Directory)
-  └── Project Registry (.workspace-sync/)
-        ├── LOCAL      → Read + Write Access (Local paths, Git metadata)
-        ├── TESTING    → Read-Only Access (Remote SSH Alias → Target Path)
-        └── PRODUCTION → Strict Read-Only Access (Remote SSH Alias → Target Path)
-```
+### `workspace-sync init`
 
----
+**Purpose:** Initialize the `.workspace-sync/` configuration directory and generate initial agent memory.
 
-## 2. Installation & Requirements
-
-Ensure all prerequisites and commands are followed sequentially.
-
-### Prerequisites
-
-| Dependency | Minimum Version | Verification Command |
-|---|---|---|
-| **Node.js** | `18+` | `node --version` |
-| **npm** | `9+` | `npm --version` |
-| **Git** | Any | `git --version` |
-| **SSH** | Any system client | `ssh -V` |
-
-> [!NOTE]
-> **Windows Users**: An active SSH agent (like OpenSSH for Windows or Pageant) is required. The system `ssh` binary must be available on your PATH.
-
-### Global Installation
-
-To install WorkspaceSync globally on your system:
-
+**Syntax:**
 ```bash
-npm install -g workspace-sync
+workspace-sync init [options]
 ```
 
-Verify that the CLI has been installed successfully:
+**Options:**
+- `-n, --name "<name>"`: Custom workspace display name (defaults to current folder name).
 
+**Example:**
 ```bash
-workspace-sync --version
-# Output: workspace-sync 0.1.0
-```
-
----
-
-## 3. Initial Setup & Configuration
-
-After installation, set up the configuration registry within your workspace root directory.
-
-### Initialize Workspace
-
-Navigate to your workspace root directory and run the initialization command:
-
-```bash
-cd /path/to/your-workspace
 workspace-sync init --name "MyWorkspace"
 ```
 
-This creates the `.workspace-sync/` directory containing configuration mappings and the `AGENT_MEMORY.md` file:
-```
-.workspace-sync/
-├── workspace.json       # Workspace metadata
-├── projects.json        # Registered project configurations (initially empty)
-├── environments.json    # Target VPS server references (initially empty)
-├── policies.json        # Project read/write policies (initially empty)
-└── AGENT_MEMORY.md      # Auto-generated agent context instructions
-```
-
 ---
 
-## 4. Basic Usage
+### `workspace-sync status`
 
-Use these fundamental commands to register projects and manage your workspace configuration.
+**Purpose:** Display a live summary of all registered projects, local Git statuses, and linked VPS environment paths.
 
-### Register a Project
-Register a local project directory in WorkspaceSync:
-```bash
-workspace-sync add-project api ./api-service --git https://github.com/org/api.git
-```
-
-### Link VPS Environments
-Link your Testing and Production environments to your project. Use SSH aliases configured in your local `~/.ssh/config` (never pass credentials directly).
-```bash
-workspace-sync link-testing api my-testing-vps /var/www/api
-workspace-sync link-production api my-production-vps /var/www/api
-```
-
-### Show Workspace Status
-Display registered projects, local Git statuses, and environment mappings:
+**Syntax:**
 ```bash
 workspace-sync status
 ```
 
 ---
 
-## 5. Project Setup & Workspace Management
+### `workspace-sync add-project`
 
-Follow this end-to-end workflow to register, update, and manage your projects.
+**Purpose:** Register a local project directory in the workspace configuration map.
 
-```
-[Register Project] ──> [Link Server Aliases] ──> [Validate Connections] ──> [Deploy Skills]
-```
-
-### Step 1: Register Projects
-Add all projects belonging to the workspace:
+**Syntax:**
 ```bash
-workspace-sync add-project admin ./admin-panel
-workspace-sync add-project api ./api-service
+workspace-sync add-project "<name>" "<localPath>" [options]
 ```
 
-### Step 2: Link Remote Environments
-Map SSH aliases to target paths:
+**Arguments:**
+- `"<name>"`: Unique project identifier.
+- `"<localPath>"`: Relative or absolute path to the local project directory.
+
+**Options:**
+- `-g, --git "<repository>"`: Git remote repository URL or identifier.
+
+**Example:**
 ```bash
-workspace-sync link-testing admin test-vps /var/www/admin
-workspace-sync link-testing api test-vps /var/www/api
+workspace-sync add-project "admin" "./admin-panel" -g "https://github.com/org/admin.git"
 ```
 
-### Step 3: Run Self-Diagnostics
-Verify all local paths exist and remote SSH connections are successful:
+---
+
+### `workspace-sync remove-project`
+
+**Purpose:** Safely unregister project metadata and configuration mappings from WorkspaceSync.
+
+**Syntax:**
+```bash
+workspace-sync remove-project "<project>" [options]
+```
+
+**Arguments:**
+- `"<project>"`: Name of the project to remove.
+
+**Options:**
+- `-y, --yes`: Skip confirmation prompt.
+
+> [!NOTE]
+> This command only removes WorkspaceSync metadata configuration. It does **not** delete local source code files, Git repositories, remote server files, or SSH settings.
+
+**Example:**
+```bash
+workspace-sync remove-project "admin" -y
+```
+
+---
+
+### `workspace-sync rename-project`
+
+**Purpose:** Rename an existing registered project configuration without modifying any files or directories on disk.
+
+**Syntax:**
+```bash
+workspace-sync rename-project "<currentName>" "<newName>"
+```
+
+**Arguments:**
+- `"<currentName>"`: Existing project identifier.
+- `"<newName>"`: New project identifier.
+
+**Example:**
+```bash
+workspace-sync rename-project "old-admin" "admin-panel"
+```
+
+---
+
+### `workspace-sync link-testing`
+
+**Purpose:** Link a project's Testing VPS environment via a local SSH alias and remote directory path.
+
+**Syntax:**
+```bash
+workspace-sync link-testing "<project>" "<sshAlias>" "<remotePath>"
+```
+
+**Arguments:**
+- `"<project>"`: Registered project identifier.
+- `"<sshAlias>"`: SSH alias name from `~/.ssh/config` (never raw passwords or keys).
+- `"<remotePath>"`: Absolute path to project root on remote server.
+
+**Example:**
+```bash
+workspace-sync link-testing "admin" "test-vps" "/var/www/admin"
+```
+
+---
+
+### `workspace-sync link-production`
+
+**Purpose:** Link a project's Production VPS environment via a local SSH alias and remote directory path (strictly read-only).
+
+**Syntax:**
+```bash
+workspace-sync link-production "<project>" "<sshAlias>" "<remotePath>"
+```
+
+**Arguments:**
+- `"<project>"`: Registered project identifier.
+- `"<sshAlias>"`: SSH alias name from `~/.ssh/config`.
+- `"<remotePath>"`: Absolute path to project root on remote server.
+
+**Example:**
+```bash
+workspace-sync link-production "admin" "prod-vps" "/var/www/admin"
+```
+
+---
+
+### `workspace-sync doctor`
+
+**Purpose:** Perform a self-diagnostic check on configuration integrity, local directory existence, and SSH connectivity to linked VPS hosts.
+
+**Syntax:**
 ```bash
 workspace-sync doctor
 ```
 
-### Step 4: Install MCP Config & Skills
-Deploy VS Code settings and modular AI agent skills:
+---
+
+### `workspace-sync install`
+
+**Purpose:** Write VS Code MCP settings (`.vscode/mcp.json`) and deploy task-specific AI agent skills into `.agents/skills/`.
+
+**Syntax:**
 ```bash
 workspace-sync install
 ```
 
-### Step 5: Perform Rollbacks (Undo)
-If you run a configuration command by mistake (e.g. accidentally unregistering a project), you can perform a one-step rollback:
+---
+
+### `workspace-sync undo`
+
+**Purpose:** Perform a single-step atomic rollback of the last reversible workspace operation (`add-project`, `remove-project`, `rename-project`, `link-testing`, `link-production`).
+
+**Syntax:**
 ```bash
-workspace-sync undo
+workspace-sync undo [options]
+```
+
+**Options:**
+- `-y, --yes`: Skip confirmation prompt.
+
+**Example:**
+```bash
+workspace-sync remove-project "admin" -y
+workspace-sync undo -y
 ```
 
 ---
 
-## 6. Common Workflows & Examples
+### `workspace-sync mcp`
 
-Here is how you and your AI assistant interact with WorkspaceSync:
+**Purpose:** Start the stdio Model Context Protocol (MCP) server for IDE and AI agent connections.
 
-### Developer: Removing a Project Safely
-To remove a project registration without touching local source code or remote files:
+**Syntax:**
 ```bash
-workspace-sync remove-project api
-```
-If you need to bypass confirmation prompts (e.g. in scripts):
-```bash
-workspace-sync remove-project api --yes
+workspace-sync mcp
 ```
 
-### AI Agent: Inspecting and Debugging
-Once the server is configured, your AI assistant can execute remote tasks:
-1. **Compare Commits**: Compare what commits are deployed on Testing vs Production:
-   - Tool used: `compare_environments`
-2. **Read Logs**: Retrieve the latest systemd logs from the Testing VPS to debug a crash:
-   - Tool used: `remote_logs`
-3. **Verify Runtime**: Inspect processes running on the Production VPS:
-   - Tool used: `remote_processes`
+> [!NOTE]
+> This command is invoked automatically by VS Code or your MCP client via `.vscode/mcp.json`. Do not run manually during normal usage.
 
 ---
 
-## 7. Advanced & Developer Details
+## Documentation Links
 
-Detailed developer docs, internal schemas, security details, and MCP tool protocols are kept separate from the user guides.
-
-- **Developer Guide**: [DEVELOPER.md](docs/DEVELOPER.md)
-  - Full ASCII System Topology & Diagrams
-  - JSON Schema References (`projects.json`, `policies.json`, etc.)
-  - Model Context Protocol (MCP) Tools List & Schema Definition
-  - Secrets Redaction RegEx and Logs Architecture
-  - Compilation, watching, and unit test suites commands
+- **Setup Guide:** [SETUP.md](SETUP.md)
+- **Developer & Architecture Docs:** [docs/DEVELOPER.md](docs/DEVELOPER.md)
+- **Contribution Guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **License:** [MIT License](LICENSE)
 
 ---
 
-## 8. Contributing
+## Contributing
 
 Contributions are welcome! If you would like to help improve WorkspaceSync, please check out the step-by-step guide in [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to fork, clone, set up, test, and open a Pull Request.
-

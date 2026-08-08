@@ -181,6 +181,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["project", "environment"],
         },
       },
+      {
+        name: "workspace_undo",
+        description: "Perform a single-step rollback of the last reversible WorkspaceSync configuration operation.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   };
 });
@@ -300,6 +305,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         project = prjName;
         environment = envName;
         result = await remoteProcesses(config, prjName, envName);
+        break;
+      }
+      case "workspace_undo": {
+        const { loadUndoSnapshot, performUndo } = require("./config/undo");
+        const snapshot = loadUndoSnapshot(process.cwd());
+        if (!snapshot) {
+          result = { status: "ignored", message: "Nothing to undo. No previous reversible operation found." };
+        } else {
+          const desc = snapshot.description;
+          await performUndo({ yes: true }, process.cwd());
+          result = { status: "success", message: `Successfully undone last operation: ${desc}. Restored previous workspace state.` };
+        }
         break;
       }
       default:

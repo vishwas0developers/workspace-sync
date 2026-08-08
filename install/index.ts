@@ -60,15 +60,24 @@ description: "Manage workspace projects: register, rename, or remove projects, c
 Use this skill when managing the workspace configuration and projects registry.
 
 ## When to Use
-- Registering a new project (\`workspace-sync add-project\`).
-- Removing an existing project (\`workspace-sync remove-project\`).
-- Renaming a registered project (\`workspace-sync rename-project\`).
+- Registering a new project (\`workspace-sync add-project "<name>" "<localPath>" [options]\`).
+- Removing an existing project (\`workspace-sync remove-project "<project>" [options]\`).
+- Renaming a registered project (\`workspace-sync rename-project "<currentName>" "<newName>"\`).
 - Checking local status and registered environments (\`workspace-sync status\`).
+- Reverting the last configuration change (\`workspace-sync undo [options]\`).
+
+## Required MCP Tools
+- \`workspace_context\`
+- \`workspace_info\`
+- \`list_projects\`
+- \`get_project\`
+- \`workspace_undo\`
 
 ## Safety Rules
 - \`remove-project\` is fail-closed. Ensure you provide the exact resolved project name.
 - Non-existent or empty project target will abort and make no changes. No wildcards allowed.
 - Displays the target project name and path before requesting confirmation.
+- \`undo\` performs a single-step rollback of the immediately preceding project change and consumes the snapshot to prevent multi-step rollback.
 `
     },
     {
