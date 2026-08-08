@@ -175,7 +175,7 @@ Your workspace is now fully configured and ready for your AI assistant.
 
 ## 🛠️ Command Reference
 
-All commands are executed from your workspace root directory. Most users only need `workspace-sync setup` plus the matching `install <agent>` command; the rest are for advanced/manual use.
+All commands are executed from your workspace root directory. Most users only need `workspace-sync setup` plus the matching `workspace-sync "agent" install` command; the rest are for advanced/manual use.
 
 ### Command Overview Table
 
@@ -190,7 +190,7 @@ All commands are executed from your workspace root directory. Most users only ne
 | [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias.                |
 | [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias (read-only). |
 | [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Run diagnostics on local paths and SSH host connectivity.                 |
-| [`workspace-sync install [agent]`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
+| [`workspace-sync install "agent"`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
 | [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
 | [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
 
@@ -200,7 +200,7 @@ All commands are executed from your workspace root directory. Most users only ne
 
 > ### 0. `workspace-sync setup`
 >
-> 📌 **Purpose:** One-command **project** setup (recommended). Detects the current workspace and project folders, initializes `.workspace-sync/` (or preserves it if it already exists), auto-registers detected projects, and generates `AGENT_MEMORY.md` — all with minimal interaction. Does **not** write any AI agent or MCP configuration; run `workspace-sync install [agent]` separately for that (see [🔌 Agent Installation](#-agent-installation)).
+> 📌 **Purpose:** One-command **project** setup (recommended). Detects the current workspace and project folders, initializes `.workspace-sync/` (or preserves it if it already exists), auto-registers detected projects, and generates `AGENT_MEMORY.md` — all with minimal interaction. Does **not** write any AI agent or MCP configuration; run `workspace-sync install "agent"` separately for that (see [🔌 Agent Installation](#-agent-installation)).
 >
 > 💻 **Syntax:**
 >
@@ -225,7 +225,7 @@ All commands are executed from your workspace root directory. Most users only ne
 >
 > ⚙️ **Options:**
 >
-> - `-n, --name "<name>"`: Custom workspace display name (defaults to current folder name).
+> - `-n, --name "name"`: Custom workspace display name (defaults to current folder name).
 >
 > 📝 **Example:**
 >
@@ -254,17 +254,17 @@ All commands are executed from your workspace root directory. Most users only ne
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync add-project "<name>" "<localPath>" [options]
+> workspace-sync add-project "name" "localPath" [options]
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `"<name>"`: Unique project identifier.
-> - `"<localPath>"`: Relative or absolute path to the local project directory.
+> - `"name"`: Unique project identifier.
+> - `"localPath"`: Relative or absolute path to the local project directory.
 >
 > ⚙️ **Options:**
 >
-> - `-g, --git "<repository>"`: Git remote repository URL or identifier.
+> - `-g, --git "repository"`: Git remote repository URL or identifier.
 >
 > 📝 **Example:**
 >
@@ -281,12 +281,12 @@ All commands are executed from your workspace root directory. Most users only ne
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync remove-project "<project>" [options]
+> workspace-sync remove-project "project" [options]
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `"<project>"`: Name of the project to remove.
+> - `"project"`: Name of the project to remove.
 >
 > ⚙️ **Options:**
 >
@@ -310,13 +310,13 @@ All commands are executed from your workspace root directory. Most users only ne
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync rename-project "<currentName>" "<newName>"
+> workspace-sync rename-project "currentName" "newName"
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `"<currentName>"`: Existing project identifier.
-> - `"<newName>"`: New project identifier.
+> - `"currentName"`: Existing project identifier.
+> - `"newName"`: New project identifier.
 >
 > 📝 **Example:**
 >
@@ -333,14 +333,14 @@ All commands are executed from your workspace root directory. Most users only ne
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-testing "<project>" "<sshAlias>" "<remotePath>"
+> workspace-sync link-testing "project" "sshAlias" "remotePath"
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `"<project>"`: Registered project identifier.
-> - `"<sshAlias>"`: SSH alias name from `~/.ssh/config` (never raw passwords or keys).
-> - `"<remotePath>"`: Absolute path to project root on remote server.
+> - `"project"`: Registered project identifier.
+> - `"sshAlias"`: SSH alias name from `~/.ssh/config` (never raw passwords or keys).
+> - `"remotePath"`: Absolute path to project root on remote server.
 >
 > 📝 **Example:**
 >
@@ -357,14 +357,14 @@ All commands are executed from your workspace root directory. Most users only ne
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-production "<project>" "<sshAlias>" "<remotePath>"
+> workspace-sync link-production "project" "sshAlias" "remotePath"
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `"<project>"`: Registered project identifier.
-> - `"<sshAlias>"`: SSH alias name from `~/.ssh/config`.
-> - `"<remotePath>"`: Absolute path to project root on remote server.
+> - `"project"`: Registered project identifier.
+> - `"sshAlias"`: SSH alias name from `~/.ssh/config`.
+> - `"remotePath"`: Absolute path to project root on remote server.
 >
 > 📝 **Example:**
 >
@@ -386,21 +386,21 @@ All commands are executed from your workspace root directory. Most users only ne
 
 ---
 
-> ### 9. `workspace-sync <agent> install` / `workspace-sync install [agent]`
+> ### 9. `workspace-sync "agent" install` / `workspace-sync install "agent"`
 >
-> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into `.agents/skills/`. See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `[agent]` (bare `workspace-sync install`) targets VS Code (`.vscode/mcp.json`) for backward compatibility.
+> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into `.agents/skills/`. See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `"agent"` (bare `workspace-sync install`) targets VS Code (`.vscode/mcp.json`) for backward compatibility.
 >
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync <agent> install
+> workspace-sync "agent" install
 > # or, equivalently:
-> workspace-sync install [agent]
+> workspace-sync install "agent"
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `<agent>` / `[agent]`: See the [🔌 Agent Installation](#-agent-installation) table for the full list. Kimi Code is reachable only via `workspace-sync install --platform kimi`.
+> - `"agent"`: See the [🔌 Agent Installation](#-agent-installation) table for the full list. Kimi Code is reachable only via `workspace-sync install --platform kimi`.
 >
 > 📝 **Example:**
 >
