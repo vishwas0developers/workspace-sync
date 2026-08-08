@@ -178,10 +178,10 @@ test("`workspace-sync aider install` deploys skills only — Aider has no MCP su
   try {
     runCli(["aider", "install"], scratch);
     assert.ok(
-      fs.existsSync(path.join(scratch, ".agents", "skills", "workspace-sync-status", "SKILL.md")),
-      "expected skills to be deployed for Aider"
+      fs.existsSync(path.join(scratch, ".aider", "workspace-sync-status", "SKILL.md")),
+      "expected skills to be deployed to Aider's native .aider/ directory"
     );
-    assert.ok(!fs.existsSync(path.join(scratch, ".aider")), "Aider has no MCP config to write");
+    assert.ok(!fs.existsSync(path.join(scratch, ".agents")), "Aider must not write to the generic .agents/skills fallback");
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

@@ -37,7 +37,7 @@ Make your AI agent always aware of your workspace map. Run the install command f
 workspace-sync install claude
 ```
 
-This writes the MCP server registration for that specific agent and deploys the WorkspaceSync skills to the agent's own skills directory (e.g. `.claude/skills/` for Claude Code; `.agents/skills/` for other/cross-framework agents — see the [🔌 Agent Installation](#-agent-installation) table).
+This writes the MCP server registration for that specific agent and deploys the WorkspaceSync skills to that agent's own native skills directory (e.g. `.claude/skills/` for Claude Code, `.codex/skills/` for Codex, `.opencode/skills/` for OpenCode — see the [🔌 Agent Installation](#-agent-installation) table for the full per-agent mapping).
 
 > [!IMPORTANT]
 > Use the `workspace-sync install "agent"` form shown above and in the table below. The alternate `workspace-sync "agent" install` subcommand form (e.g. `workspace-sync claude install`) is also registered but has been unreliable via `npx` in some environments (it can fail with `error: unknown command`) — prefer `install "agent"`.
@@ -67,35 +67,37 @@ The individual commands documented below (`init`, `add-project`, `link-testing`,
 
 After running `workspace-sync setup` (Step 1 above), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
 
-| Platform | Command |
-| :--- | :--- |
-| Claude Code | `workspace-sync install claude` |
-| CodeBuddy | `workspace-sync install codebuddy` |
-| Codex | `workspace-sync install codex` |
-| OpenCode | `workspace-sync install opencode` |
-| Kilo Code | `workspace-sync install kilo` |
-| GitHub Copilot CLI | `workspace-sync install copilot` |
-| VS Code Copilot Chat | `workspace-sync install vscode` |
-| Aider | `workspace-sync install aider` |
-| OpenClaw | `workspace-sync install claw` |
-| Factory Droid | `workspace-sync install droid` |
-| Trae | `workspace-sync install trae` |
-| Trae CN | `workspace-sync install trae-cn` |
-| Cursor | `workspace-sync install cursor` |
-| Gemini CLI | `workspace-sync install gemini` |
-| Hermes | `workspace-sync install hermes` |
-| Kimi Code | `workspace-sync install --platform kimi` |
-| Amp | `workspace-sync install amp` |
-| Agent Skills (cross-framework) | `workspace-sync install agents` (alias `workspace-sync install skills`) |
-| Kiro IDE/CLI | `workspace-sync install kiro` |
-| Pi coding agent | `workspace-sync install pi` |
-| Devin CLI | `workspace-sync install devin` |
-| Google Antigravity | `workspace-sync install antigravity` |
+| Platform | Command | Skills Directory |
+| :--- | :--- | :--- |
+| Claude Code | `workspace-sync install claude` | `.claude/skills/` |
+| CodeBuddy | `workspace-sync install codebuddy` | `.codebuddy/skills/` |
+| Codex | `workspace-sync install codex` | `.codex/skills/` |
+| OpenCode | `workspace-sync install opencode` | `.opencode/skills/` |
+| Kilo Code | `workspace-sync install kilo` | `.config/kilo/skills/` |
+| GitHub Copilot CLI | `workspace-sync install copilot` | `.copilot/skills/` |
+| VS Code Copilot Chat | `workspace-sync install vscode` | `.agents/skills/` (generic; unverified for VS Code) |
+| Aider | `workspace-sync install aider` | `.aider/` (no `skills/` subfolder) |
+| OpenClaw | `workspace-sync install claw` | `.openclaw/skills/` |
+| Factory Droid | `workspace-sync install droid` | `.factory/skills/` |
+| Trae | `workspace-sync install trae` | `.trae/skills/` |
+| Trae CN | `workspace-sync install trae-cn` | `.trae-cn/skills/` |
+| Cursor | `workspace-sync install cursor` | `.agents/skills/` (generic; unverified for Cursor) |
+| Gemini CLI | `workspace-sync install gemini` | `.gemini/skills/` |
+| Hermes | `workspace-sync install hermes` | `.hermes/skills/` |
+| Kimi Code | `workspace-sync install --platform kimi` | `.kimi/skills/` |
+| Amp | `workspace-sync install amp` | `.agents/skills/` |
+| Agent Skills (cross-framework) | `workspace-sync install agents` (alias `workspace-sync install skills`) | `.agents/skills/` |
+| Kiro IDE/CLI | `workspace-sync install kiro` | `.kiro/skills/` |
+| Pi coding agent | `workspace-sync install pi` | `.pi/agent/skills/` |
+| Devin CLI | `workspace-sync install devin` | `.devin/skills/` |
+| Google Antigravity | `workspace-sync install antigravity` | `.agents/skills/` |
 
 Every command is safe to re-run at any time — it merges into any existing MCP config rather than overwriting it, and refreshes skills to the currently installed WorkspaceSync version. `workspace-sync install` with no arguments still works too (defaults to VS Code) for backward compatibility.
 
 > [!NOTE]
-> Config paths for **Claude Code**, **VS Code Copilot Chat**, **Cursor**, **Gemini CLI**, and **Google Antigravity** are confirmed. **Aider** has no MCP support, so its command deploys skills only. **Codex** writes a TOML `mcp_servers` entry (`~/.codex/config.toml`), not JSON. The remaining platforms use a best-effort `.{platform}/mcp.json` convention (the schema shared by most MCP-compatible editor forks) — if a specific one doesn't take effect, please confirm that agent's actual config location and open an issue so it can be corrected. Skills are deployed to `.claude/skills/` for Claude Code and `.agents/skills/` for every other platform.
+> MCP config paths for **Claude Code**, **VS Code Copilot Chat**, **Cursor**, **Gemini CLI**, and **Google Antigravity** are confirmed. **Aider** has no MCP support, so its command deploys skills only. **Codex** writes a TOML `mcp_servers` entry (`~/.codex/config.toml`), not JSON. The remaining platforms' MCP config uses a best-effort `.{platform}/mcp.json` convention (the schema shared by most MCP-compatible editor forks) — if a specific one doesn't take effect, please confirm that agent's actual config location and open an issue so it can be corrected.
+>
+> **Skills directories are agent-specific**, not a shared cross-framework folder — this keeps each agent's skills isolated so they don't collide and each agent discovers WorkspaceSync's skills natively (see the table above). Only **VS Code Copilot Chat** and **Cursor** currently fall back to the generic `.agents/skills/` location, since no verified dedicated skills folder for them has been confirmed yet — open an issue if you can confirm one.
 >
 > Each platform above also has a `workspace-sync "agent" install` subcommand form (e.g. `workspace-sync claude install`), but it has proven unreliable via `npx` in some environments. **Use the `workspace-sync install "agent"` form shown in the table** — it's the one verified to work consistently.
 

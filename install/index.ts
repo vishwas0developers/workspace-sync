@@ -51,10 +51,35 @@ const VERIFIED_MCP_TARGETS: Partial<Record<AgentId, (targetDir: string) => strin
   kiro: (targetDir) => path.join(targetDir, ".kiro", "settings", "mcp.json"),
 };
 
-// Verified skill directory conventions. Claude Code reads skills from `.claude/skills/`,
-// not the generic cross-framework `.agents/skills/` fallback used below.
+// Verified native skill directories, one per agent. Each agent reads skills from its
+// own dedicated location rather than the generic cross-framework `.agents/skills/`
+// fallback — this avoids collisions between agents and lets each agent discover
+// WorkspaceSync's skills directly, without relying on cross-framework support.
+// Paths cross-checked against graphify (D:\AI_Tools\graphify-8), a project-scope,
+// multi-agent skill installer that verifies these same per-agent conventions.
 const VERIFIED_SKILLS_TARGETS: Partial<Record<AgentId, (targetDir: string) => string>> = {
   claude: (targetDir) => path.join(targetDir, ".claude", "skills"),
+  codebuddy: (targetDir) => path.join(targetDir, ".codebuddy", "skills"),
+  codex: (targetDir) => path.join(targetDir, ".codex", "skills"),
+  opencode: (targetDir) => path.join(targetDir, ".opencode", "skills"),
+  kilo: (targetDir) => path.join(targetDir, ".config", "kilo", "skills"),
+  copilot: (targetDir) => path.join(targetDir, ".copilot", "skills"),
+  // Aider has no `skills/` subfolder — each skill lives directly under `.aider/<name>/`.
+  aider: (targetDir) => path.join(targetDir, ".aider"),
+  claw: (targetDir) => path.join(targetDir, ".openclaw", "skills"),
+  droid: (targetDir) => path.join(targetDir, ".factory", "skills"),
+  trae: (targetDir) => path.join(targetDir, ".trae", "skills"),
+  "trae-cn": (targetDir) => path.join(targetDir, ".trae-cn", "skills"),
+  gemini: (targetDir) => path.join(targetDir, ".gemini", "skills"),
+  hermes: (targetDir) => path.join(targetDir, ".hermes", "skills"),
+  kimi: (targetDir) => path.join(targetDir, ".kimi", "skills"),
+  kiro: (targetDir) => path.join(targetDir, ".kiro", "skills"),
+  pi: (targetDir) => path.join(targetDir, ".pi", "agent", "skills"),
+  devin: (targetDir) => path.join(targetDir, ".devin", "skills"),
+  // Amp and Antigravity both read project skills from the generic `.agents/skills/`
+  // location — same as the fallback below, listed explicitly since it's verified.
+  amp: (targetDir) => path.join(targetDir, ".agents", "skills"),
+  antigravity: (targetDir) => path.join(targetDir, ".agents", "skills"),
 };
 
 // Tracks which agents `install`/`update` has been run for, so `workspace-sync update`

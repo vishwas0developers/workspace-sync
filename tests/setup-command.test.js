@@ -66,7 +66,7 @@ test("skills/MCP config only appear after an explicit `install [agent]` call fol
       "expected .mcp.json to be written after 'install claude'"
     );
     assert.ok(
-      fs.existsSync(path.join(scratch, ".agents", "skills", "workspace-sync-compare-environments", "SKILL.md")),
+      fs.existsSync(path.join(scratch, ".claude", "skills", "workspace-sync-compare-environments", "SKILL.md")),
       "expected skills to be deployed after 'install claude'"
     );
   } finally {
