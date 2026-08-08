@@ -49,6 +49,7 @@ ${projectSections || "No projects configured yet."}
 You must load context and files progressively:
 1. **Minimal Initial Context**: Start by calling \`workspace_context\` to load the workspace, projects, and environments layout.
 2. **Identify Task-Specific Skill**: Only load the specific skill that matches the current operation:
+   - For investigating a reported bug, incident, regression, or unexplained behaviour: load \`workspace-sync-investigation\` first — it is the master investigation workflow and will tell you which further tools/skills to use.
    - For checking registered projects/environments: load only \`workspace-sync-status\`.
    - For diagnostics (paths, SSH connectivity, stale skills): load only \`workspace-sync-doctor\`.
    - For Testing VPS inspection: load only \`workspace-sync-debug-testing\`.

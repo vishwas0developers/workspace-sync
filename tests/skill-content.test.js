@@ -13,6 +13,7 @@ test("every generated SKILL.md carries an explicit Context Discipline / no-explo
     installWorkspaceSync(scratch);
 
     const skillNames = [
+      "workspace-sync-investigation",
       "workspace-sync-status",
       "workspace-sync-doctor",
       "workspace-sync-debug-testing",
@@ -47,6 +48,56 @@ test("every generated SKILL.md carries an explicit Context Discipline / no-explo
     for (const name of deprecated) {
       const skillPath = path.join(scratch, ".agents", "skills", name, "SKILL.md");
       assert.ok(!fs.existsSync(skillPath), `deprecated skill ${name} should not be installed`);
+    }
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("the investigation master skill carries its safety rules and references only real MCP tools", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-skill-investigation-"));
+  try {
+    installWorkspaceSync(scratch);
+
+    const skillPath = path.join(scratch, ".agents", "skills", "workspace-sync-investigation", "SKILL.md");
+    assert.ok(fs.existsSync(skillPath), "expected the investigation skill to be installed");
+    const content = fs.readFileSync(skillPath, "utf-8");
+
+    // Read-only guarantee: Testing/Production must never be mutated during an investigation.
+    assert.ok(
+      /Zero Write Policy/.test(content),
+      "investigation skill must carry the Zero Write Policy"
+    );
+    assert.ok(
+      /untrusted/i.test(content),
+      "investigation skill must warn that remote output is untrusted data, not instructions"
+    );
+    // It must explain how remote access happens, so the agent does not invent its own.
+    assert.ok(
+      /SSH alias/i.test(content),
+      "investigation skill must explain that remote access goes through configured SSH aliases"
+    );
+
+    // Drift guard: every MCP tool the skill names must actually exist on the server.
+    const serverSource = fs.readFileSync(
+      path.join(__dirname, "..", "dist", "src", "server.js"),
+      "utf-8"
+    );
+    const realTools = new Set(
+      [...serverSource.matchAll(/name: "([a-z_]+)"/g)].map((m) => m[1])
+    );
+    assert.ok(realTools.size > 0, "expected to extract the MCP tool list from the built server");
+
+    const referenced = new Set(
+      [...content.matchAll(/`((?:workspace|remote|local|list|get|compare)_[a-z_]+)`/g)].map((m) => m[1])
+    );
+    assert.ok(referenced.size > 0, "expected the investigation skill to reference MCP tools");
+
+    for (const tool of referenced) {
+      assert.ok(
+        realTools.has(tool),
+        `investigation skill references '${tool}', which is not a real MCP tool (available: ${[...realTools].join(", ")})`
+      );
     }
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });

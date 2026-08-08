@@ -7,6 +7,16 @@
 
 > Security-hardened local Model Context Protocol (MCP) server & CLI tool that provides AI coding assistants with a persistent map of your workspace projects and remote servers over SSH aliases.
 
+## What does WorkspaceSync do?
+
+When you ask an AI coding assistant for help, it normally only sees the one folder you have open. It has no idea that the same project also runs on a test server and a production server, where those servers are, or which version of your code is live on each. So you end up re-explaining your setup every session — and the assistant still can't go check anything itself.
+
+WorkspaceSync fixes that. You register your projects once and link each one to its Testing and Production servers using SSH connections you've **already** set up. From then on your AI assistant automatically knows which projects exist and where they live on your machine, which servers each one is deployed to, and what is actually running on those servers right now.
+
+The practical payoff: you can ask *"why is the login page broken in production?"* and the assistant can actually go and look — read the live logs, check which commit is deployed, compare it against your local code — instead of guessing.
+
+**Testing and Production are strictly read-only.** WorkspaceSync can inspect your servers but never modify them, so an AI assistant can investigate a live incident with no risk of changing or breaking it.
+
 If you find this project useful, consider giving it a ⭐ on GitHub!
 
 ---
@@ -110,6 +120,33 @@ Every command is safe to re-run at any time — it merges into any existing MCP 
 > **Skills directories are agent-specific**, not a shared cross-framework folder — this keeps each agent's skills isolated so they don't collide and each agent discovers WorkspaceSync's skills natively (see the table above). Only **VS Code Copilot Chat** and **Cursor** currently fall back to the generic `.agents/skills/` location, since no verified dedicated skills folder for them has been confirmed yet — open an issue if you can confirm one.
 >
 > Each platform above also has a `workspace-sync "agent" install` subcommand form (e.g. `workspace-sync claude install`), but it has proven unreliable via `npx` in some environments. **Use the `workspace-sync install "agent"` form shown in the table** — it's the one verified to work consistently.
+
+---
+
+## 🧠 Deployed Skills
+
+Every `install` deploys these skills into your agent's skills directory. Your AI assistant loads whichever one matches the task — it does not read them all up front.
+
+| Skill | Use it for |
+| :--- | :--- |
+| **`workspace-sync-investigation`** | **Master command.** The entry point whenever a bug, incident, or regression is reported and the cause is unknown. |
+| `workspace-sync-status` | Which projects are registered, their local Git state, and which environments are linked. |
+| `workspace-sync-doctor` | Diagnosing configuration, local paths, SSH connectivity, and stale-skill problems. |
+| `workspace-sync-debug-testing` | Inspecting files, logs, processes, or Git status on the **Testing** server. |
+| `workspace-sync-debug-production` | Inspecting files, logs, processes, or Git status on the **Production** server. |
+| `workspace-sync-compare-environments` | Checking whether local, Testing, and Production are on the same commit. |
+
+### The investigation master command
+
+When something breaks, point your AI assistant at the investigation skill (for example: *"use the workspace-sync investigation skill — the login page is failing in production"*). It tells the assistant, in one place:
+
+- **What tools it has** — the full MCP tool surface, and that all remote access goes through the SSH aliases you already configured (it never handles hosts, keys, or credentials itself).
+- **What order to look in** — orient on the workspace map, check for deployed-version drift first (a large share of "works locally, breaks in prod" is simply the wrong commit deployed), then read the live logs, then check services/processes, then inspect the specific deployed files the evidence points at.
+- **When to stop** — it works top-down and stops as soon as the evidence identifies the cause, rather than mechanically running every check or crawling your repository.
+- **How to report** — symptom, root cause with the evidence that proves it (log line, revision hash, file path), the required fix, and an honest statement of confidence rather than a guess presented as a finding.
+
+> [!IMPORTANT]
+> Investigation is **read-only**. The skill explicitly forbids mutating Testing or Production — no edits, deploys, restarts, or "let me just try a fix" on a live server. It proposes the fix; a human applies it through the normal local → review → deploy path. It also treats everything returned from a server (logs, file contents, process output) as untrusted **data**, so text on a server that looks like an instruction is reported, never executed.
 
 ---
 
