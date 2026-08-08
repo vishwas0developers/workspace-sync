@@ -41,6 +41,9 @@ build/Release
 # Dependency directories
 node_modules/
 jspm_packages/
+.claude
+.agents
+.vscode
 
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
@@ -136,3 +139,4 @@ dist
 .pnp.*
 docs/images/vishwas0developers_avatar.svg
 docs/images/vishwas0developers_avatar.png
+.mcp.json

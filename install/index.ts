@@ -51,6 +51,19 @@ const VERIFIED_MCP_TARGETS: Partial<Record<AgentId, (targetDir: string) => strin
   kiro: (targetDir) => path.join(targetDir, ".kiro", "settings", "mcp.json"),
 };
 
+// Verified skill directory conventions. Claude Code reads skills from `.claude/skills/`,
+// not the generic cross-framework `.agents/skills/` fallback used below.
+const VERIFIED_SKILLS_TARGETS: Partial<Record<AgentId, (targetDir: string) => string>> = {
+  claude: (targetDir) => path.join(targetDir, ".claude", "skills"),
+};
+
+function resolveSkillsDir(agentId: AgentId, targetDir: string): string {
+  const verified = VERIFIED_SKILLS_TARGETS[agentId];
+  if (verified) return verified(targetDir);
+  // Generic fallback: `.agents/skills/` — the cross-framework Agent Skills convention.
+  return path.join(targetDir, ".agents", "skills");
+}
+
 function resolveMcpConfigPath(agentId: AgentId, targetDir: string): string | null {
   if (SKILLS_ONLY_AGENTS.has(agentId)) return null;
   if (agentId === "codex") return path.join(os.homedir(), ".codex", "config.toml");
@@ -136,8 +149,10 @@ export function installWorkspaceSync(targetDir: string = process.cwd(), agent?: 
     }
   }
 
+  const skillsDir = resolveSkillsDir(agentId, targetDir);
+
   // Clean up the old monolithic skill if it exists
-  const oldSkillDir = path.join(targetDir, ".agents", "skills", "workspace-sync");
+  const oldSkillDir = path.join(skillsDir, "workspace-sync");
   const oldSkillFile = path.join(oldSkillDir, "SKILL.md");
   if (fs.existsSync(oldSkillFile)) {
     try {
@@ -156,7 +171,7 @@ export function installWorkspaceSync(targetDir: string = process.cwd(), agent?: 
     "workspace-sync-inspect-production",
   ];
   for (const deprecated of deprecatedSkillNames) {
-    const deprecatedDir = path.join(targetDir, ".agents", "skills", deprecated);
+    const deprecatedDir = path.join(skillsDir, deprecated);
     const deprecatedFile = path.join(deprecatedDir, "SKILL.md");
     if (fs.existsSync(deprecatedFile)) {
       try {
@@ -312,7 +327,6 @@ Call \`compare_environments\`/\`remote_git_revision\` directly — this skill fi
     }
   ];
 
-  const skillsDir = path.join(targetDir, ".agents", "skills");
   for (const skill of skills) {
     const skillDir = path.join(skillsDir, skill.name);
     if (!fs.existsSync(skillDir)) {
