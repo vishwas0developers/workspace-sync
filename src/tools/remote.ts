@@ -33,7 +33,7 @@ export async function remoteTree(
   
   // Scoped read of directory structure (depth 2 for sanity, list files)
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `find "${env.remotePath}" -maxdepth 2 -not -path '*/.*'`
   );
 
@@ -74,7 +74,7 @@ export async function remoteFileRead(
   const safeRemotePath = resolveSafePath(env.remotePath, filePath);
 
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `cat "${safeRemotePath}"`
   );
 
@@ -94,7 +94,7 @@ export async function remoteGitStatus(
   const env = getRemoteConfig(config, projectName, environment, environment === "testing" ? "readTesting" : "readProduction");
   
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `cd "${env.remotePath}" && git status --porcelain`
   );
 
@@ -113,7 +113,7 @@ export async function remoteGitRevision(
   const env = getRemoteConfig(config, projectName, environment, environment === "testing" ? "readTesting" : "readProduction");
 
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `cd "${env.remotePath}" && git rev-parse HEAD`
   );
 
@@ -148,7 +148,7 @@ export async function remoteLogs(
     cmd = `journalctl -u ${service} -n ${limit} --no-pager`;
   }
 
-  const result = await executeSSHCommand(env.sshAlias, cmd);
+  const result = await executeSSHCommand(env.sshAliasOrHost, cmd);
   if (result.code !== 0) {
     throw new Error(`Failed to fetch logs: ${result.stderr}`);
   }
@@ -165,7 +165,7 @@ export async function remoteServices(
 
   // System status check: systemctl listing + pm2 if available
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `systemctl list-units --type=service --state=running --no-pager | head -n 40 && which pm2 >/dev/null && pm2 list || true`
   );
 
@@ -185,7 +185,7 @@ export async function remoteProcesses(
 
   // Ps command filtered to exclude kernel threads and reduce context size
   const result = await executeSSHCommand(
-    env.sshAlias,
+    env.sshAliasOrHost,
     `ps aux --sort=-%cpu | grep -v "\\[" | head -n 50`
   );
 

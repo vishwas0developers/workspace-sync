@@ -55,29 +55,8 @@ This writes the MCP server registration for that specific agent and deploys the 
 > [!IMPORTANT]
 > These commands intentionally do **not** use `npx` — many AI agents cannot invoke `npx` from inside their own tool-call sandbox. Install WorkspaceSync globally first (`npm install -g workspace-sync`, see [Installation](#-installation) below) so the plain `workspace-sync` binary is directly available, then run the Step 2 command from within your agent.
 
-### Keeping your workspace up to date
-
-After the two steps above, your workspace is fully set up. There are **two different, non-interchangeable "update" commands** — one updates the npm package, the other updates your project:
-
-```bash
-# 1. PACKAGE update — upgrades the globally installed workspace-sync npm package itself.
-#    Run this whenever a newer WorkspaceSync version is published.
-workspace-sync self-update
-# equivalent to: npm install -g workspace-sync@latest
-
-# 2. PROJECT sync — re-syncs THIS project using whichever WorkspaceSync version is
-#    currently installed. Run this after self-update, after pulling changes, or just
-#    to make sure everything is current.
-npx workspace-sync update
-```
-
-`workspace-sync update` is a **project setup/maintenance command**, not something you run from inside your AI agent. It:
-- Regenerates `AGENT_MEMORY.md` from your current workspace configuration.
-- Re-syncs skills and MCP config for **every AI agent you've previously installed** — it remembers which agents you set up (via `.workspace-sync/installed-agents.json`), so you don't need to re-list them.
-
-`update` does **not** fetch a newer WorkspaceSync release — it only re-applies whatever version is already installed. To actually get a newer release, run `self-update` first.
-
-Both are safe to re-run at any time; `update` tells you to run Step 2 first if no agent has been installed yet. `workspace-sync doctor` will also warn you when installed skills are stale and an `update` is due. Run `workspace-sync --help` for a full agent-by-agent reference (install command, skills directory, MCP config location) — it's written to be easy for an AI agent to read and self-identify in.
+> [!TIP]
+> Run `workspace-sync --help` for a full agent-by-agent reference (install command, skills directory, MCP config location) — it's written to be easy for an AI agent to read and self-identify in. `workspace-sync doctor` will warn you when a project's installed skills are stale.
 
 The individual commands documented below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
 
@@ -186,6 +165,24 @@ workspace-sync --version
 
 ---
 
+## 🔄 Update
+
+To update the WorkspaceSync **npm package** to the latest published version, use npm:
+
+```bash
+npm install workspace-sync@latest
+```
+
+If you installed it globally (as in [Installation](#-installation) above), add `-g`:
+
+```bash
+npm install -g workspace-sync@latest
+```
+
+This is the npm package update command — WorkspaceSync has no CLI update command of its own. After updating the package, run `workspace-sync doctor` in each project: it detects stale skills and re-syncs them to the new version for you.
+
+---
+
 ## 🏁 Manual / Advanced Setup
 
 > [!TIP]
@@ -211,7 +208,7 @@ workspace-sync add-project "admin" "./admin-panel" -g "https://github.com/org/ad
 
 ### Step 3: Link Remote VPS Environments
 
-Link your Testing and Production servers using SSH aliases configured in your `~/.ssh/config`:
+Link your Testing and Production servers using an SSH alias from your `~/.ssh/config`, or a hostname:
 
 ```bash
 workspace-sync link-testing "admin" "test-vps" "/var/www/admin"
@@ -252,14 +249,12 @@ All commands are executed from your workspace root directory. Most users only ne
 | [`workspace-sync add-project`](#3-workspace-sync-add-project)         | Register a local project directory in the workspace configuration map.    |
 | [`workspace-sync remove-project`](#4-workspace-sync-remove-project)   | Safely unregister project configuration mappings.                         |
 | [`workspace-sync rename-project`](#5-workspace-sync-rename-project)   | Rename an existing registered project configuration.                      |
-| [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias.                |
-| [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias (read-only). |
+| [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias or hostname.    |
+| [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias or hostname (read-only). |
 | [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Run diagnostics on local paths and SSH host connectivity.                 |
 | [`workspace-sync install "agent"`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
 | [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
 | [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
-| `workspace-sync update`                                               | **Project** sync: re-run install for every previously installed agent (see [Keeping your workspace up to date](#keeping-your-workspace-up-to-date)). |
-| `workspace-sync self-update`                                          | **Package** update: upgrade the globally installed npm package itself (see [Keeping your workspace up to date](#keeping-your-workspace-up-to-date)). |
 
 ---
 
@@ -395,18 +390,18 @@ All commands are executed from your workspace root directory. Most users only ne
 
 > ### 6. `workspace-sync link-testing`
 >
-> 📌 **Purpose:** Link a project's Testing VPS environment via a local SSH alias and remote directory path.
+> 📌 **Purpose:** Link a project's Testing VPS environment via an SSH alias (or hostname) and remote directory path.
 >
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-testing "project" "sshAlias" "remotePath"
+> workspace-sync link-testing "project" "sshAliasOrHost" "remotePath"
 > ```
 >
 > 📥 **Arguments:**
 >
 > - `"project"`: Registered project identifier.
-> - `"sshAlias"`: SSH alias name from `~/.ssh/config` (never raw passwords or keys).
+> - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname (never raw passwords or keys).
 > - `"remotePath"`: Absolute path to project root on remote server.
 >
 > 📝 **Example:**
@@ -419,18 +414,18 @@ All commands are executed from your workspace root directory. Most users only ne
 
 > ### 7. `workspace-sync link-production`
 >
-> 📌 **Purpose:** Link a project's Production VPS environment via a local SSH alias and remote directory path (strictly read-only).
+> 📌 **Purpose:** Link a project's Production VPS environment via an SSH alias (or hostname) and remote directory path (strictly read-only).
 >
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-production "project" "sshAlias" "remotePath"
+> workspace-sync link-production "project" "sshAliasOrHost" "remotePath"
 > ```
 >
 > 📥 **Arguments:**
 >
 > - `"project"`: Registered project identifier.
-> - `"sshAlias"`: SSH alias name from `~/.ssh/config`.
+> - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname.
 > - `"remotePath"`: Absolute path to project root on remote server.
 >
 > 📝 **Example:**

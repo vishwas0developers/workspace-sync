@@ -30,10 +30,10 @@ test("remove-project command regression tests", async (t) => {
       },
       environments: {
         "demo-assets-generator": {
-          testing: { sshAlias: "dummy-alias", remotePath: "/var/www/demo" }
+          testing: { sshAliasOrHost: "dummy-alias", remotePath: "/var/www/demo" }
         },
         "admin": {
-          testing: { sshAlias: "admin-alias", remotePath: "/var/www/admin" }
+          testing: { sshAliasOrHost: "admin-alias", remotePath: "/var/www/admin" }
         }
       },
       policies: {

@@ -208,10 +208,10 @@ program
 
         console.log(`  - ${prj}:`);
         if (envs.testing) {
-          console.log(`      * Testing   → ${chalk.bold(envs.testing.sshAlias)}:${envs.testing.remotePath}`);
+          console.log(`      * Testing   → ${chalk.bold(envs.testing.sshAliasOrHost)}:${envs.testing.remotePath}`);
         }
         if (envs.production) {
-          console.log(`      * Production → ${chalk.bold(envs.production.sshAlias)}:${envs.production.remotePath}`);
+          console.log(`      * Production → ${chalk.bold(envs.production.sshAliasOrHost)}:${envs.production.remotePath}`);
         }
       }
       console.log("");
@@ -253,10 +253,10 @@ program
   });
 
 program
-  .command("link-testing <project> <sshAlias> <remotePath>")
-  .usage('"<project>" "<sshAlias>" "<remotePath>"')
-  .description("Link testing environment to project")
-  .action((project, sshAlias, remotePath) => {
+  .command("link-testing <project> <sshAliasOrHost> <remotePath>")
+  .usage('"<project>" "<sshAliasOrHost>" "<remotePath>"')
+  .description("Link testing environment to project (sshAliasOrHost: an SSH alias from ~/.ssh/config, or a hostname)")
+  .action((project, sshAliasOrHost, remotePath) => {
     try {
       const config = loadConfig();
       if (!config.projects[project]) {
@@ -271,7 +271,7 @@ program
       }
 
       config.environments[project].testing = {
-        sshAlias,
+        sshAliasOrHost,
         remotePath,
       };
 
@@ -284,10 +284,10 @@ program
   });
 
 program
-  .command("link-production <project> <sshAlias> <remotePath>")
-  .usage('"<project>" "<sshAlias>" "<remotePath>"')
-  .description("Link production environment to project")
-  .action((project, sshAlias, remotePath) => {
+  .command("link-production <project> <sshAliasOrHost> <remotePath>")
+  .usage('"<project>" "<sshAliasOrHost>" "<remotePath>"')
+  .description("Link production environment to project (sshAliasOrHost: an SSH alias from ~/.ssh/config, or a hostname)")
+  .action((project, sshAliasOrHost, remotePath) => {
     try {
       const config = loadConfig();
       if (!config.projects[project]) {
@@ -302,7 +302,7 @@ program
       }
 
       config.environments[project].production = {
-        sshAlias,
+        sshAliasOrHost,
         remotePath,
       };
 
@@ -482,70 +482,6 @@ program
   });
 
 program
-  .command("update")
-  .description(
-    "PROJECT sync: refresh AGENT_MEMORY.md and re-run install for every previously installed agent, using the currently installed WorkspaceSync npm package. Does NOT update the npm package itself — see 'workspace-sync self-update' for that."
-  )
-  .action(async () => {
-    try {
-      const config = loadConfig();
-      generateAgentMemory(config);
-      console.log(chalk.green("✓ Regenerated AGENT_MEMORY.md"));
-
-      const agents = getInstalledAgents(process.cwd());
-      if (agents.length === 0) {
-        console.log(
-          chalk.yellow(
-            "\n⚠ No previously installed agents found. Run 'workspace-sync install [agent]' at least once before using 'update'."
-          )
-        );
-        return;
-      }
-
-      console.log(chalk.bold(`\nRefreshing ${agents.length} installed agent(s): ${agents.join(", ")}`));
-      for (const agent of agents) {
-        installWorkspaceSync(process.cwd(), agent);
-      }
-
-      console.log(chalk.bold.green(`\n✓ WorkspaceSync update complete (v${pkg.version})`));
-      console.log(
-        chalk.gray(
-          `Note: this refreshed your project using the currently installed WorkspaceSync v${pkg.version}. To get a newer WorkspaceSync release first, run 'workspace-sync self-update'.`
-        )
-      );
-    } catch (err: any) {
-      console.error(chalk.red(`Update Error: ${err.message}`));
-      process.exitCode = 1;
-    }
-  });
-
-program
-  .command("self-update")
-  .description(
-    "PACKAGE update: upgrade the globally installed WorkspaceSync npm package itself to the latest published version (runs 'npm install -g workspace-sync@latest'). Not project-specific — run 'workspace-sync update' afterward to re-sync your project."
-  )
-  .action(() => {
-    console.log(chalk.bold("\nUpdating the globally installed WorkspaceSync package..."));
-    console.log(chalk.gray("Running: npm install -g workspace-sync@latest\n"));
-    const result = spawnSync("npm", ["install", "-g", "workspace-sync@latest"], {
-      stdio: "inherit",
-      shell: process.platform === "win32",
-    });
-    if (result.error || (result.status ?? 0) !== 0) {
-      console.error(chalk.red("\n✗ Package update failed. You can run the command manually:"));
-      console.error(chalk.gray("  npm install -g workspace-sync@latest"));
-      process.exitCode = 1;
-      return;
-    }
-    console.log(chalk.bold.green("\n✓ WorkspaceSync package updated."));
-    console.log(
-      chalk.gray(
-        "Run 'workspace-sync --version' to confirm the new version, then 'workspace-sync update' to re-sync each project."
-      )
-    );
-  });
-
-program
   .command("mcp")
   .description("Start the stdio Model Context Protocol (MCP) server")
   .action(() => {
@@ -553,51 +489,212 @@ program
     require("../src/server");
   });
 
+// Compares two "x.y.z" versions. Returns >0 when `a` is newer than `b`, <0 when older,
+// 0 when equal. Pre-release suffixes are ignored (only the numeric core is compared),
+// which is enough to decide whether a published release is an upgrade. Using this
+// instead of `!==` matters: a locally-built dev version can be AHEAD of what's published,
+// and a plain inequality check would "update" it backwards into a downgrade.
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => v.split("-")[0].split(".").map((n) => parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+// Queries npm for the latest published version. Returns null on any failure (offline,
+// npm missing, registry error, unexpected output) — a version check must never break
+// `doctor`, which has to keep working without network access.
+function getLatestPublishedVersion(): string | null {
+  try {
+    const result = spawnSync("npm", ["view", pkg.name, "version"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32",
+      timeout: 15000,
+    });
+    if (result.error || result.status !== 0) return null;
+    const version = (result.stdout || "").trim();
+    return /^\d+\.\d+\.\d+/.test(version) ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+// Installs the latest published package globally. Returns true only if npm succeeded.
+function installLatestPackage(): boolean {
+  console.log(chalk.gray(`  Running: npm install -g ${pkg.name}@latest\n`));
+  const result = spawnSync("npm", ["install", "-g", `${pkg.name}@latest`], {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
+  if (result.error || (result.status ?? 0) !== 0) {
+    console.error(
+      chalk.red(`\n  ✗ Automatic update failed. Update manually with: npm install -g ${pkg.name}@latest`)
+    );
+    return false;
+  }
+  console.log(chalk.green(`\n✓ Package updated to the latest published version.`));
+  return true;
+}
+
 program
   .command("doctor")
-  .description("Perform self-diagnostic check on config and connectivity")
-  .action(async () => {
+  .description(
+    "Diagnose and auto-repair: checks config, npm package freshness, agent skill freshness, and SSH connectivity — updating the package and re-syncing stale skills automatically. Use --check-only to report without changing anything."
+  )
+  .option("--check-only", "Report problems without installing updates or re-syncing skills")
+  .option("--offline", "Skip the network check for a newer published package version")
+  .action(async (options) => {
+    // Problems are counted rather than thrown so the report always runs to completion,
+    // then surfaces a non-zero exit code. That lets CI and AI agents detect a failing
+    // workspace programmatically instead of having to parse the human-readable output.
+    let problems = 0;
+    let warnings = 0;
+
+    console.log(chalk.bold("\nWorkspaceSync Doctor - Diagnostics Report"));
+    console.log(chalk.gray("==========================================="));
+
     try {
-      const config = loadConfig();
-      console.log(chalk.bold("\nWorkspaceSync Doctor - Diagnostics Report"));
-      console.log(chalk.gray("==========================================="));
+      // Doctor is the command you reach for when things are broken, so a missing
+      // configuration must be a clear diagnosis — not an unhandled load error.
+      const configDir = getConfigDir();
+      if (!fs.existsSync(configDir)) {
+        console.log(chalk.red(`✗ No WorkspaceSync configuration found at ${configDir}`));
+        console.log(chalk.gray("  → Run 'workspace-sync setup' to initialize this project."));
+        process.exitCode = 1;
+        return;
+      }
+
+      let config;
+      try {
+        config = loadConfig();
+      } catch (err: any) {
+        console.log(chalk.red(`✗ Configuration present but unreadable: ${err.message}`));
+        console.log(chalk.gray("  → Check the JSON files in .workspace-sync/ for syntax errors."));
+        process.exitCode = 1;
+        return;
+      }
 
       console.log(chalk.green("✓ Config directory present (.workspace-sync)"));
       console.log(chalk.green(`✓ Workspace defined: ${config.workspace.name}`));
 
+      // --- Package freshness -------------------------------------------------
+      // Compare the running version against the latest published on npm. If a newer
+      // one exists, install it. Note the running process still executes the OLD code
+      // afterward, so skills must NOT be re-synced in the same run — they would be
+      // written from the old version. We defer skill sync to the next run instead.
+      let packageWasUpdated = false;
+      if (options.offline) {
+        console.log(chalk.gray(`- Package version: v${pkg.version} (skipped update check: --offline)`));
+      } else {
+        const latest = getLatestPublishedVersion();
+        if (!latest) {
+          console.log(
+            chalk.gray(`- Package version: v${pkg.version} (could not reach npm to check for updates)`)
+          );
+        } else if (compareVersions(latest, pkg.version) <= 0) {
+          // Equal, or the running build is ahead of the registry (local dev build).
+          // Either way there is nothing to install — never downgrade.
+          console.log(chalk.green(`✓ Package is up to date (v${pkg.version}; latest published is v${latest})`));
+        } else if (options.checkOnly) {
+          console.log(
+            chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}).`)
+          );
+          console.log(chalk.gray(`  → Run 'npm install -g ${pkg.name}@latest' to update.`));
+          warnings++;
+        } else {
+          console.log(
+            chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}). Updating...`)
+          );
+          packageWasUpdated = installLatestPackage();
+          if (!packageWasUpdated) problems++;
+        }
+      }
+
+      // --- Agent skill freshness ---------------------------------------------
       // Each agent has its own native skills directory (e.g. .claude/skills for Claude
       // Code, .codex/skills for Codex) — check every agent actually installed in THIS
       // project, not a single hardcoded generic path, so this report reflects reality
       // per agent instead of silently missing agents that installed to their own folder.
-      const installedAgents = getInstalledAgents(process.cwd());
+      // The manifest is a plain JSON file a user could hand-edit, so drop anything that
+      // isn't a supported agent rather than letting it fail later during a re-sync.
+      const recordedAgents = getInstalledAgents(process.cwd());
+      const unknownAgents = recordedAgents.filter((a) => !SUPPORTED_AGENTS.includes(a));
+      const installedAgents = recordedAgents.filter((a) => SUPPORTED_AGENTS.includes(a));
+      if (unknownAgents.length > 0) {
+        console.log(
+          chalk.yellow(`⚠ Ignoring unrecognized agent(s) in .workspace-sync/installed-agents.json: ${unknownAgents.join(", ")}`)
+        );
+        warnings++;
+      }
+
       if (installedAgents.length === 0) {
         console.log(
           chalk.yellow(
             `⚠ No agents installed in this project yet. Run 'workspace-sync install [agent]' to set one up.`
           )
         );
+        warnings++;
+      } else if (packageWasUpdated) {
+        // Deliberately skipped: this process is still running the pre-update code, so
+        // syncing now would deploy the OLD skills and stamp them as current.
+        console.log(
+          chalk.cyan(
+            `\nSkills for ${installedAgents.join(", ")} will be synced on the next run — re-run 'workspace-sync doctor' now that the package is updated.`
+          )
+        );
       } else {
+        const staleAgents: string[] = [];
         for (const agentId of installedAgents) {
           const info = describeAgent(agentId);
           const skillsDir = resolveSkillsDir(agentId, process.cwd());
           const versionStampPath = path.join(skillsDir, ".workspace-sync-version");
           if (!fs.existsSync(skillsDir)) {
             console.log(
-              chalk.yellow(`⚠ ${info.label}: expected skills at ${skillsDir} but the directory is missing. Run 'workspace-sync install ${agentId}' to fix.`)
+              chalk.yellow(`⚠ ${info.label}: expected skills at ${skillsDir} but the directory is missing.`)
             );
+            staleAgents.push(agentId);
           } else if (!fs.existsSync(versionStampPath)) {
             console.log(
-              chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} have no version stamp (pre-upgrade). Run 'workspace-sync update' to refresh.`)
+              chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} have no version stamp (pre-upgrade).`)
             );
+            staleAgents.push(agentId);
           } else {
             const installedVersion = fs.readFileSync(versionStampPath, "utf-8").trim();
             if (installedVersion !== pkg.version) {
               console.log(
-                chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync update' to refresh.`)
+                chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} are from v${installedVersion} — current CLI is v${pkg.version}.`)
               );
+              staleAgents.push(agentId);
             } else {
               console.log(chalk.green(`✓ ${info.label}: skills at ${skillsDir} are up to date (v${installedVersion})`));
             }
+          }
+        }
+
+        if (staleAgents.length > 0) {
+          if (options.checkOnly) {
+            console.log(
+              chalk.gray(`  → Run 'workspace-sync install <agent>' for each agent above to refresh.`)
+            );
+            warnings += staleAgents.length;
+          } else {
+            console.log(chalk.bold(`\nRe-syncing skills for: ${staleAgents.join(", ")}`));
+            for (const agentId of staleAgents) {
+              try {
+                installWorkspaceSync(process.cwd(), agentId);
+              } catch (err: any) {
+                console.error(chalk.red(`  ✗ Failed to re-sync ${agentId}: ${err.message}`));
+                problems++;
+              }
+            }
+            // AGENT_MEMORY.md is generated from config and can drift after an upgrade too.
+            generateAgentMemory(config);
+            console.log(chalk.green("✓ Regenerated AGENT_MEMORY.md"));
           }
         }
       }
@@ -605,51 +702,85 @@ program
       const projects = Object.keys(config.projects);
       console.log(`✓ Projects registered: ${projects.length}`);
 
+      // Every linked environment is probed concurrently. Previously these ran one after
+      // another, so a workspace with several projects paid the full SSH handshake latency
+      // (up to a 10s timeout) for each host in series.
+      type SshCheck = { project: string; envLabel: string; alias: string; ok: boolean; detail: string };
+      const sshChecks: Promise<SshCheck>[] = [];
+      for (const prj of projects) {
+        const envs = config.environments[prj];
+        if (!envs) continue;
+        for (const envLabel of ["testing", "production"] as const) {
+          const env = envs[envLabel];
+          if (!env) continue;
+          sshChecks.push(
+            executeSSHCommand(env.sshAliasOrHost, "echo 'ping'")
+              .then((res) =>
+                res.stdout === "ping"
+                  ? { project: prj, envLabel, alias: env.sshAliasOrHost, ok: true, detail: "SSH connection successful" }
+                  : {
+                      project: prj,
+                      envLabel,
+                      alias: env.sshAliasOrHost,
+                      ok: false,
+                      detail: `SSH connection error: ${res.stderr || "unknown status"}`,
+                    }
+              )
+              .catch((err: any) => ({
+                project: prj,
+                envLabel,
+                alias: env.sshAliasOrHost,
+                ok: false,
+                detail: `SSH connection failed: ${err.message}`,
+              }))
+          );
+        }
+      }
+      const sshResults = await Promise.all(sshChecks);
+
       for (const prj of projects) {
         console.log(chalk.cyan(`\nChecking Project '${prj}':`));
         const data = config.projects[prj];
-        
-        // Resolve path check
+
         const resolvedPath = path.resolve(data.localPath);
         if (fs.existsSync(resolvedPath)) {
           console.log(chalk.green(`  ✓ Local path exists: ${resolvedPath}`));
         } else {
           console.log(chalk.red(`  ✗ Local path missing: ${resolvedPath}`));
+          console.log(chalk.gray(`      → Update it with 'workspace-sync add-project' or remove it with 'workspace-sync remove-project "${prj}"'.`));
+          problems++;
         }
 
-        const envs = config.environments[prj];
-        if (envs) {
-          if (envs.testing) {
-            console.log(`  - Testing host check [${envs.testing.sshAlias}]:`);
-            try {
-              const res = await executeSSHCommand(envs.testing.sshAlias, "echo 'ping'");
-              if (res.stdout === "ping") {
-                console.log(chalk.green("      ✓ SSH Connection successful"));
-              } else {
-                console.log(chalk.red(`      ✗ SSH Connection error: ${res.stderr || "Unknown status"}`));
-              }
-            } catch (err: any) {
-              console.log(chalk.red(`      ✗ SSH Connection failed: ${err.message}`));
-            }
-          }
-          if (envs.production) {
-            console.log(`  - Production host check [${envs.production.sshAlias}]:`);
-            try {
-              const res = await executeSSHCommand(envs.production.sshAlias, "echo 'ping'");
-              if (res.stdout === "ping") {
-                console.log(chalk.green("      ✓ SSH Connection successful"));
-              } else {
-                console.log(chalk.red(`      ✗ SSH Connection error: ${res.stderr || "Unknown status"}`));
-              }
-            } catch (err: any) {
-              console.log(chalk.red(`      ✗ SSH Connection failed: ${err.message}`));
-            }
+        const forProject = sshResults.filter((r) => r.project === prj);
+        if (forProject.length === 0) {
+          console.log(chalk.gray("  - No Testing/Production environments linked."));
+        }
+        for (const check of forProject) {
+          const title = check.envLabel === "testing" ? "Testing" : "Production";
+          console.log(`  - ${title} host check [${check.alias}]:`);
+          if (check.ok) {
+            console.log(chalk.green(`      ✓ ${check.detail}`));
+          } else {
+            console.log(chalk.red(`      ✗ ${check.detail}`));
+            problems++;
           }
         }
+      }
+
+      // Final verdict, so a human skimming — or an agent parsing — gets one clear line.
+      console.log("");
+      if (problems === 0 && warnings === 0) {
+        console.log(chalk.bold.green("✓ All checks passed."));
+      } else if (problems === 0) {
+        console.log(chalk.bold.yellow(`Completed with ${warnings} warning(s) and no errors.`));
+      } else {
+        console.log(chalk.bold.red(`Completed with ${problems} error(s) and ${warnings} warning(s).`));
+        process.exitCode = 1;
       }
       console.log("");
     } catch (err: any) {
       console.error(chalk.red(`Doctor Error: ${err.message}`));
+      process.exitCode = 1;
     }
   });
 
@@ -683,16 +814,6 @@ function buildAgentReferenceHelp(): string {
   lines.push("  Deploys skills + MCP config for ONE specific agent. Run once per agent, per project.");
   lines.push("  Safe to re-run: merges into existing MCP config, refreshes skills to current version.");
   lines.push("");
-  lines.push("workspace-sync update");
-  lines.push("  PROJECT sync. Regenerates AGENT_MEMORY.md and re-runs install for every agent already");
-  lines.push("  installed in this project (tracked in .workspace-sync/installed-agents.json), using the");
-  lines.push("  currently installed WorkspaceSync npm package version. Does NOT fetch a newer package.");
-  lines.push("");
-  lines.push("workspace-sync self-update");
-  lines.push("  PACKAGE update. Upgrades the globally installed 'workspace-sync' npm package itself");
-  lines.push("  (runs 'npm install -g workspace-sync@latest'). Not project-specific. Run this first when");
-  lines.push("  a newer WorkspaceSync version exists, then run 'update' in each project.");
-  lines.push("");
   lines.push("workspace-sync doctor");
   lines.push("  Diagnostics: verifies local project paths, tests SSH connectivity to linked Testing/");
   lines.push("  Production hosts, and warns when installed skills are stale relative to this CLI version.");
@@ -708,8 +829,10 @@ function buildAgentReferenceHelp(): string {
   lines.push("-".repeat(78));
   lines.push("  1. workspace-sync setup                 (once per project)");
   lines.push("  2. workspace-sync install <your-agent>  (once per agent you use — see table below)");
-  lines.push("  3. workspace-sync update                (anytime, to refresh this project)");
-  lines.push("     workspace-sync self-update            (when a newer WorkspaceSync version is published)");
+  lines.push("");
+  lines.push("To update the WorkspaceSync npm package itself, use npm — there is no CLI update command:");
+  lines.push("  npm install workspace-sync@latest       (or -g, if installed globally)");
+  lines.push("Then re-run 'workspace-sync install <your-agent>' to refresh that project's skills.");
   lines.push("");
   lines.push("PER-AGENT REFERENCE");
   lines.push("-".repeat(78));

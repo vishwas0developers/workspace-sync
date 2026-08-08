@@ -27,8 +27,8 @@ export function listProjects(config: FullConfig): ProjectInfo[] {
       localPath: prj.localPath,
       git: prj.git || "none",
       environments: {
-        testing: envs.testing ? envs.testing.sshAlias : null,
-        production: envs.production ? envs.production.sshAlias : null,
+        testing: envs.testing ? envs.testing.sshAliasOrHost : null,
+        production: envs.production ? envs.production.sshAliasOrHost : null,
       },
     };
   });
@@ -48,8 +48,8 @@ export function getProject(config: FullConfig, projectName: string) {
     localPath: prj.localPath,
     git: prj.git || "none",
     environments: {
-      testing: envs.testing ? { sshAlias: envs.testing.sshAlias, remotePath: envs.testing.remotePath } : null,
-      production: envs.production ? { sshAlias: envs.production.sshAlias, remotePath: envs.production.remotePath } : null,
+      testing: envs.testing ? { sshAliasOrHost: envs.testing.sshAliasOrHost, remotePath: envs.testing.remotePath } : null,
+      production: envs.production ? { sshAliasOrHost: envs.production.sshAliasOrHost, remotePath: envs.production.remotePath } : null,
     },
     policy: {
       readLocal: policy.readLocal,

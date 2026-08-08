@@ -8,7 +8,7 @@ export function listEnvironments(config: FullConfig, projectName: string) {
     .filter(([_, data]) => data !== null)
     .map(([env, data]) => ({
       environment: env,
-      sshAlias: data!.sshAlias,
+      sshAliasOrHost: data!.sshAliasOrHost,
       remotePath: data!.remotePath,
     }));
 }
@@ -24,7 +24,7 @@ export function getEnvironment(config: FullConfig, projectName: string, environm
   return {
     project: projectName,
     environment,
-    sshAlias: envData.sshAlias,
+    sshAliasOrHost: envData.sshAliasOrHost,
     remotePath: envData.remotePath,
     policy: environment === "testing" ? prj.policy.readTesting : prj.policy.readProduction,
   };
@@ -44,7 +44,7 @@ export async function compareEnvironments(
   if (testing) {
     try {
       const res = await executeSSHCommand(
-        testing.sshAlias,
+        testing.sshAliasOrHost,
         `cd "${testing.remotePath}" && git rev-parse HEAD`
       );
       if (res.code === 0) testingRevision = res.stdout;
@@ -56,7 +56,7 @@ export async function compareEnvironments(
   if (production) {
     try {
       const res = await executeSSHCommand(
-        production.sshAlias,
+        production.sshAliasOrHost,
         `cd "${production.remotePath}" && git rev-parse HEAD`
       );
       if (res.code === 0) productionRevision = res.stdout;

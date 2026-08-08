@@ -142,8 +142,8 @@ export function describeAgent(agentId: AgentId): AgentInfo {
   };
 }
 
-// Tracks which agents `install`/`update` has been run for, so `workspace-sync update`
-// knows which agents to refresh without the caller having to name them again.
+// Tracks which agents have been installed in this project, so `doctor` knows which
+// agents' native skill directories to check without the caller having to name them.
 function getInstalledAgentsManifestPath(targetDir: string): string {
   return path.join(targetDir, ".workspace-sync", "installed-agents.json");
 }
@@ -566,7 +566,7 @@ Call \`compare_environments\`/\`remote_git_revision\` directly — this skill fi
   // Version stamp so `doctor` can detect stale skills after a package upgrade.
   fs.writeFileSync(path.join(skillsDir, ".workspace-sync-version"), pkg.version, "utf-8");
 
-  // Remember this agent so `workspace-sync update` can refresh it later without
-  // the caller having to re-specify every agent that was ever installed.
+  // Remember this agent so `doctor` can later check this agent's own skills
+  // directory without the caller having to re-specify which agents are in use.
   recordInstalledAgent(agentId, targetDir);
 }

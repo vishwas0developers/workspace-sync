@@ -12,10 +12,27 @@ export const ProjectSchema = z.object({
 
 export const ProjectsSchema = z.record(z.string(), ProjectSchema);
 
-export const EnvironmentConfigSchema = z.object({
-  sshAlias: z.string(),
-  remotePath: z.string(),
-});
+// `sshAliasOrHost` accepts either an alias defined in ~/.ssh/config or a hostname.
+//
+// The field was previously named `sshAlias`. That name is still accepted when reading so
+// existing `.workspace-sync/environments.json` files keep working after an upgrade; the
+// value is normalized to `sshAliasOrHost` here, and the next config write persists the
+// new name. Without this fallback every pre-rename installation would fail to load.
+export const EnvironmentConfigSchema = z
+  .object({
+    sshAliasOrHost: z.string().optional(),
+    /** @deprecated Legacy name for `sshAliasOrHost`; read-only compatibility. */
+    sshAlias: z.string().optional(),
+    remotePath: z.string(),
+  })
+  .refine((env) => Boolean(env.sshAliasOrHost ?? env.sshAlias), {
+    message: "Missing 'sshAliasOrHost' (an SSH alias from ~/.ssh/config, or a hostname)",
+    path: ["sshAliasOrHost"],
+  })
+  .transform((env) => ({
+    sshAliasOrHost: (env.sshAliasOrHost ?? env.sshAlias) as string,
+    remotePath: env.remotePath,
+  }));
 
 export const ProjectEnvironmentsSchema = z.object({
   testing: EnvironmentConfigSchema.optional(),

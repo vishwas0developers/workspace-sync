@@ -77,7 +77,7 @@ Configuration files are located in `.workspace-sync/` in the workspace root.
 {
   "admin": {
     "testing": {
-      "sshAlias": "my-testing-vps",
+      "sshAliasOrHost": "my-testing-vps",
       "remotePath": "/var/www/admin"
     }
   }

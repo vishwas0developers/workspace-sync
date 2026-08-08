@@ -241,8 +241,94 @@ test("`doctor` warns when installed skills are stale relative to the running CLI
     // Simulate an old install from a previous package version.
     fs.writeFileSync(path.join(scratch, ".agents", "skills", ".workspace-sync-version"), "0.0.1");
 
-    const output = runCli(["doctor"], scratch);
+    // --offline --check-only keeps this test hermetic: no npm registry lookup (slow and
+    // flaky) and no auto-repair, so the assertion sees the stale state it set up.
+    const output = runCli(["doctor", "--offline", "--check-only"], scratch);
     assert.ok(/skills at .* are from v0\.0\.1/.test(output), "expected a stale-skills warning from doctor");
+    assert.ok(
+      fs.readFileSync(path.join(scratch, ".agents", "skills", ".workspace-sync-version"), "utf-8").trim() === "0.0.1",
+      "--check-only must not modify anything"
+    );
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` auto-repairs stale skills and re-stamps them to the current version", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-repair-"));
+  try {
+    runCli(["setup"], scratch);
+    runCli(["install", "claude"], scratch);
+
+    const stampPath = path.join(scratch, ".claude", "skills", ".workspace-sync-version");
+    fs.writeFileSync(stampPath, "0.0.1");
+    // Also delete a skill outright — auto-repair must restore it, not just re-stamp.
+    const skillPath = path.join(scratch, ".claude", "skills", "workspace-sync-investigation", "SKILL.md");
+    fs.rmSync(path.dirname(skillPath), { recursive: true, force: true });
+
+    const output = runCli(["doctor", "--offline"], scratch);
+
+    assert.ok(/Re-syncing skills for: claude/.test(output), "expected doctor to announce the re-sync");
+    assert.strictEqual(
+      fs.readFileSync(stampPath, "utf-8").trim(),
+      pkg.version,
+      "expected the version stamp to be refreshed to the current version"
+    );
+    assert.ok(fs.existsSync(skillPath), "expected the deleted skill to be restored");
+    // Claude must be repaired in its own native directory, never the generic fallback.
+    assert.ok(!fs.existsSync(path.join(scratch, ".agents")), "must not write to .agents for Claude Code");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` reports a clear diagnosis and exits non-zero when no configuration exists", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-noconfig-"));
+  try {
+    let output = "";
+    let exitCode = 0;
+    try {
+      output = execFileSync("node", [cliPath, "doctor", "--offline"], {
+        cwd: scratch,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      output = (err.stdout || "") + (err.stderr || "");
+      exitCode = err.status;
+    }
+
+    assert.notStrictEqual(exitCode, 0, "expected a non-zero exit code when configuration is missing");
+    assert.ok(/No WorkspaceSync configuration found/.test(output), "expected a clear missing-config diagnosis");
+    assert.ok(/workspace-sync setup/.test(output), "expected doctor to point at 'setup' as the fix");
+    assert.ok(!/Doctor Error/.test(output), "missing config should be diagnosed, not thrown as an unhandled error");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` exits non-zero when a registered project's local path is missing", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-badpath-"));
+  try {
+    runCli(["setup"], scratch);
+    runCli(["add-project", "ghost", "./does-not-exist"], scratch);
+
+    let output = "";
+    let exitCode = 0;
+    try {
+      output = execFileSync("node", [cliPath, "doctor", "--offline"], {
+        cwd: scratch,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      output = (err.stdout || "") + (err.stderr || "");
+      exitCode = err.status;
+    }
+
+    assert.notStrictEqual(exitCode, 0, "expected a non-zero exit code for a missing project path");
+    assert.ok(/Local path missing/.test(output), "expected doctor to report the missing local path");
+    assert.ok(/error\(s\)/.test(output), "expected a summary line counting the error");
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

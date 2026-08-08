@@ -18,16 +18,16 @@ export function generateAgentMemory(config: FullConfig, cwd: string = process.cw
     };
 
     const testingDetails = envs.testing
-      ? `${envs.testing.sshAlias}:${envs.testing.remotePath} (Policy: readTesting=${policy.readTesting}, writeTesting=${policy.writeTesting})`
+      ? `${envs.testing.sshAliasOrHost}:${envs.testing.remotePath} (Policy: readTesting=${policy.readTesting}, writeTesting=${policy.writeTesting})`
       : "not configured";
 
     const productionDetails = envs.production
-      ? `${envs.production.sshAlias}:${envs.production.remotePath} (Policy: readProduction=${policy.readProduction}, writeProduction=${policy.writeProduction})`
+      ? `${envs.production.sshAliasOrHost}:${envs.production.remotePath} (Policy: readProduction=${policy.readProduction}, writeProduction=${policy.writeProduction})`
       : "not configured";
 
     return `
 ### Project: ${name}
-- **Map Chain**: LOCAL (${prj.localPath}) → GIT (${prj.git || "none"}) → TESTING (${envs.testing ? envs.testing.sshAlias : "none"}) → PRODUCTION (${envs.production ? envs.production.sshAlias : "none"})
+- **Map Chain**: LOCAL (${prj.localPath}) → GIT (${prj.git || "none"}) → TESTING (${envs.testing ? envs.testing.sshAliasOrHost : "none"}) → PRODUCTION (${envs.production ? envs.production.sshAliasOrHost : "none"})
 - **Local Path**: \`${prj.localPath}\`
 - **Git Repo**: \`${prj.git || "none"}\`
 - **Testing Link**: \`${testingDetails}\`
