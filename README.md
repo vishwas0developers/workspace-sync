@@ -47,17 +47,27 @@ This writes the MCP server registration for that specific agent and deploys the 
 
 ### Keeping your workspace up to date
 
-After the two steps above, your workspace is fully set up. Whenever you upgrade WorkspaceSync (`npm install -g workspace-sync@latest`) or just want to make sure everything is current, run:
+After the two steps above, your workspace is fully set up. There are **two different, non-interchangeable "update" commands** — one updates the npm package, the other updates your project:
 
 ```bash
+# 1. PACKAGE update — upgrades the globally installed workspace-sync npm package itself.
+#    Run this whenever a newer WorkspaceSync version is published.
+workspace-sync self-update
+# equivalent to: npm install -g workspace-sync@latest
+
+# 2. PROJECT sync — re-syncs THIS project using whichever WorkspaceSync version is
+#    currently installed. Run this after self-update, after pulling changes, or just
+#    to make sure everything is current.
 npx workspace-sync update
 ```
 
-This is a **project setup/maintenance command**, not something you run from inside your AI agent. It:
+`workspace-sync update` is a **project setup/maintenance command**, not something you run from inside your AI agent. It:
 - Regenerates `AGENT_MEMORY.md` from your current workspace configuration.
 - Re-syncs skills and MCP config for **every AI agent you've previously installed** — it remembers which agents you set up (via `.workspace-sync/installed-agents.json`), so you don't need to re-list them.
 
-Safe to re-run at any time; if no agent has been installed yet, it tells you to run Step 2 first. `workspace-sync doctor` will also warn you when installed skills are stale and an `update` is due.
+`update` does **not** fetch a newer WorkspaceSync release — it only re-applies whatever version is already installed. To actually get a newer release, run `self-update` first.
+
+Both are safe to re-run at any time; `update` tells you to run Step 2 first if no agent has been installed yet. `workspace-sync doctor` will also warn you when installed skills are stale and an `update` is due. Run `workspace-sync --help` for a full agent-by-agent reference (install command, skills directory, MCP config location) — it's written to be easy for an AI agent to read and self-identify in.
 
 The individual commands documented below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
 
@@ -211,6 +221,8 @@ All commands are executed from your workspace root directory. Most users only ne
 | [`workspace-sync install "agent"`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
 | [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
 | [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
+| `workspace-sync update`                                               | **Project** sync: re-run install for every previously installed agent (see [Keeping your workspace up to date](#keeping-your-workspace-up-to-date)). |
+| `workspace-sync self-update`                                          | **Package** update: upgrade the globally installed npm package itself (see [Keeping your workspace up to date](#keeping-your-workspace-up-to-date)). |
 
 ---
 

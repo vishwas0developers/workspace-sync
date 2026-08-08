@@ -76,11 +76,71 @@ const VERIFIED_SKILLS_TARGETS: Partial<Record<AgentId, (targetDir: string) => st
   kiro: (targetDir) => path.join(targetDir, ".kiro", "skills"),
   pi: (targetDir) => path.join(targetDir, ".pi", "agent", "skills"),
   devin: (targetDir) => path.join(targetDir, ".devin", "skills"),
-  // Amp and Antigravity both read project skills from the generic `.agents/skills/`
-  // location — same as the fallback below, listed explicitly since it's verified.
+  // Amp and Antigravity both read project skills from `.agents/skills/` — the same
+  // path as the generic fallback below, listed explicitly since it's verified for them.
   amp: (targetDir) => path.join(targetDir, ".agents", "skills"),
   antigravity: (targetDir) => path.join(targetDir, ".agents", "skills"),
+  // `.agents/skills/` isn't just a fallback guess for the cross-framework Agent Skills
+  // platform itself — it IS that platform's canonical spec location.
+  agents: (targetDir) => path.join(targetDir, ".agents", "skills"),
+  skills: (targetDir) => path.join(targetDir, ".agents", "skills"),
 };
+
+export function isSkillsOnlyAgent(agentId: AgentId): boolean {
+  return SKILLS_ONLY_AGENTS.has(agentId);
+}
+
+function displayPath(absolutePath: string): string {
+  const home = os.homedir();
+  const normalized = absolutePath.startsWith(home)
+    ? "~" + absolutePath.slice(home.length)
+    : absolutePath;
+  return normalized.split(path.sep).join("/");
+}
+
+export interface AgentInfo {
+  slug: AgentId;
+  label: string;
+  installCommand: string;
+  skillsDir: string;
+  skillsVerified: boolean;
+  mcpConfig: string | null;
+  mcpFormat: "json" | "toml" | "none";
+  mcpVerified: boolean;
+}
+
+// Builds a display-only summary of where a given agent's skills/MCP config land,
+// for the CLI's agent-facing help output and any future docs generation. Paths are
+// resolved against a placeholder "<project>" cwd — real invocations use the actual
+// project directory (see resolveSkillsDir/resolveMcpConfigPath).
+export function describeAgent(agentId: AgentId): AgentInfo {
+  const platform = PLATFORMS.find((p) => p.slug === agentId);
+  const label = platform ? platform.label : agentId;
+  const skillsVerified = agentId in VERIFIED_SKILLS_TARGETS;
+  const skillsDir = displayPath(resolveSkillsDir(agentId, "<project>"));
+
+  const skillsOnly = isSkillsOnlyAgent(agentId);
+  let mcpConfig: string | null = null;
+  let mcpFormat: "json" | "toml" | "none" = "none";
+  let mcpVerified = false;
+  if (!skillsOnly) {
+    const raw = resolveMcpConfigPath(agentId, "<project>");
+    mcpConfig = raw ? displayPath(raw) : null;
+    mcpFormat = agentId === "codex" ? "toml" : "json";
+    mcpVerified = agentId === "codex" || agentId in VERIFIED_MCP_TARGETS;
+  }
+
+  return {
+    slug: agentId,
+    label,
+    installCommand: `workspace-sync install ${agentId === "kimi" ? "--platform kimi" : agentId}`,
+    skillsDir,
+    skillsVerified,
+    mcpConfig,
+    mcpFormat,
+    mcpVerified,
+  };
+}
 
 // Tracks which agents `install`/`update` has been run for, so `workspace-sync update`
 // knows which agents to refresh without the caller having to name them again.
@@ -115,14 +175,14 @@ function recordInstalledAgent(agentId: AgentId, targetDir: string): void {
   );
 }
 
-function resolveSkillsDir(agentId: AgentId, targetDir: string): string {
+export function resolveSkillsDir(agentId: AgentId, targetDir: string): string {
   const verified = VERIFIED_SKILLS_TARGETS[agentId];
   if (verified) return verified(targetDir);
   // Generic fallback: `.agents/skills/` — the cross-framework Agent Skills convention.
   return path.join(targetDir, ".agents", "skills");
 }
 
-function resolveMcpConfigPath(agentId: AgentId, targetDir: string): string | null {
+export function resolveMcpConfigPath(agentId: AgentId, targetDir: string): string | null {
   if (SKILLS_ONLY_AGENTS.has(agentId)) return null;
   if (agentId === "codex") return path.join(os.homedir(), ".codex", "config.toml");
   const verified = VERIFIED_MCP_TARGETS[agentId];

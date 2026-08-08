@@ -238,7 +238,7 @@ test("`doctor` warns when installed skills are stale relative to the running CLI
     fs.writeFileSync(path.join(scratch, ".agents", "skills", ".workspace-sync-version"), "0.0.1");
 
     const output = runCli(["doctor"], scratch);
-    assert.ok(/Installed skills are from v0\.0\.1/.test(output), "expected a stale-skills warning from doctor");
+    assert.ok(/skills at .* are from v0\.0\.1/.test(output), "expected a stale-skills warning from doctor");
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

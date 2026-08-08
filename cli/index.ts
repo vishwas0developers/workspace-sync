@@ -7,9 +7,18 @@ import { loadConfig, saveConfig, getConfigDir } from "../src/config/loader";
 import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
-import { installWorkspaceSync, getInstalledAgents, SUPPORTED_AGENTS, PLATFORMS } from "../install/index";
+import {
+  installWorkspaceSync,
+  getInstalledAgents,
+  describeAgent,
+  isSkillsOnlyAgent,
+  resolveSkillsDir,
+  SUPPORTED_AGENTS,
+  PLATFORMS,
+} from "../install/index";
 import { saveUndoSnapshot, performUndo } from "../src/config/undo";
 import { discoverProjectCandidates } from "../src/discovery";
+import { spawnSync } from "child_process";
 
 const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
@@ -427,7 +436,7 @@ program
 program
   .command("install [agent]")
   .description(
-    `Install skills and MCP configuration for an AI agent (${SUPPORTED_AGENTS.join(", ")}; default: vscode). Prefer 'workspace-sync <agent> install'.`
+    `Install skills and MCP configuration for an AI agent (${SUPPORTED_AGENTS.join(", ")}; default: vscode). This is the preferred, npx-reliable form — see 'workspace-sync --help' for the per-agent 'workspace-sync <agent> install' subcommand form and full agent reference.`
   )
   .option("-p, --platform <platform>", "Agent to install for (overrides the positional argument; used by agents that can't invoke a subcommand)")
   .action((agent, options) => {
@@ -474,7 +483,9 @@ program
 
 program
   .command("update")
-  .description("Refresh workspace config, AGENT_MEMORY.md, and previously installed agent skills/MCP config to the current WorkspaceSync version")
+  .description(
+    "PROJECT sync: refresh AGENT_MEMORY.md and re-run install for every previously installed agent, using the currently installed WorkspaceSync npm package. Does NOT update the npm package itself — see 'workspace-sync self-update' for that."
+  )
   .action(async () => {
     try {
       const config = loadConfig();
@@ -497,10 +508,41 @@ program
       }
 
       console.log(chalk.bold.green(`\n✓ WorkspaceSync update complete (v${pkg.version})`));
+      console.log(
+        chalk.gray(
+          `Note: this refreshed your project using the currently installed WorkspaceSync v${pkg.version}. To get a newer WorkspaceSync release first, run 'workspace-sync self-update'.`
+        )
+      );
     } catch (err: any) {
       console.error(chalk.red(`Update Error: ${err.message}`));
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("self-update")
+  .description(
+    "PACKAGE update: upgrade the globally installed WorkspaceSync npm package itself to the latest published version (runs 'npm install -g workspace-sync@latest'). Not project-specific — run 'workspace-sync update' afterward to re-sync your project."
+  )
+  .action(() => {
+    console.log(chalk.bold("\nUpdating the globally installed WorkspaceSync package..."));
+    console.log(chalk.gray("Running: npm install -g workspace-sync@latest\n"));
+    const result = spawnSync("npm", ["install", "-g", "workspace-sync@latest"], {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+    if (result.error || (result.status ?? 0) !== 0) {
+      console.error(chalk.red("\n✗ Package update failed. You can run the command manually:"));
+      console.error(chalk.gray("  npm install -g workspace-sync@latest"));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(chalk.bold.green("\n✓ WorkspaceSync package updated."));
+    console.log(
+      chalk.gray(
+        "Run 'workspace-sync --version' to confirm the new version, then 'workspace-sync update' to re-sync each project."
+      )
+    );
   });
 
 program
@@ -523,25 +565,40 @@ program
       console.log(chalk.green("✓ Config directory present (.workspace-sync)"));
       console.log(chalk.green(`✓ Workspace defined: ${config.workspace.name}`));
 
-      const versionStampPath = path.join(process.cwd(), ".agents", "skills", ".workspace-sync-version");
-      if (fs.existsSync(path.join(process.cwd(), ".agents", "skills"))) {
-        if (fs.existsSync(versionStampPath)) {
-          const installedVersion = fs.readFileSync(versionStampPath, "utf-8").trim();
-          if (installedVersion !== pkg.version) {
+      // Each agent has its own native skills directory (e.g. .claude/skills for Claude
+      // Code, .codex/skills for Codex) — check every agent actually installed in THIS
+      // project, not a single hardcoded generic path, so this report reflects reality
+      // per agent instead of silently missing agents that installed to their own folder.
+      const installedAgents = getInstalledAgents(process.cwd());
+      if (installedAgents.length === 0) {
+        console.log(
+          chalk.yellow(
+            `⚠ No agents installed in this project yet. Run 'workspace-sync install [agent]' to set one up.`
+          )
+        );
+      } else {
+        for (const agentId of installedAgents) {
+          const info = describeAgent(agentId);
+          const skillsDir = resolveSkillsDir(agentId, process.cwd());
+          const versionStampPath = path.join(skillsDir, ".workspace-sync-version");
+          if (!fs.existsSync(skillsDir)) {
             console.log(
-              chalk.yellow(
-                `⚠ Installed skills are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync update' to refresh.`
-              )
+              chalk.yellow(`⚠ ${info.label}: expected skills at ${skillsDir} but the directory is missing. Run 'workspace-sync install ${agentId}' to fix.`)
+            );
+          } else if (!fs.existsSync(versionStampPath)) {
+            console.log(
+              chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} have no version stamp (pre-upgrade). Run 'workspace-sync update' to refresh.`)
             );
           } else {
-            console.log(chalk.green(`✓ Installed skills are up to date (v${installedVersion})`));
+            const installedVersion = fs.readFileSync(versionStampPath, "utf-8").trim();
+            if (installedVersion !== pkg.version) {
+              console.log(
+                chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} are from v${installedVersion} — current CLI is v${pkg.version}. Run 'workspace-sync update' to refresh.`)
+              );
+            } else {
+              console.log(chalk.green(`✓ ${info.label}: skills at ${skillsDir} are up to date (v${installedVersion})`));
+            }
           }
-        } else {
-          console.log(
-            chalk.yellow(
-              `⚠ Installed skills have no version stamp (pre-upgrade). Run 'workspace-sync install [agent]' to refresh.`
-            )
-          );
         }
       }
 
@@ -595,5 +652,106 @@ program
       console.error(chalk.red(`Doctor Error: ${err.message}`));
     }
   });
+
+// Agent-facing reference block, appended to `--help` / `help` output. Plain text
+// (no chalk colors) so it stays parseable by an AI agent reading the help output
+// programmatically. An agent should find its own name below to learn its exact
+// install command, skills directory, and MCP config location — no README lookup
+// required.
+function buildAgentReferenceHelp(): string {
+  const lines: string[] = [];
+  lines.push("");
+  lines.push("=".repeat(78));
+  lines.push("WORKSPACE-SYNC — AGENT-FACING REFERENCE");
+  lines.push("=".repeat(78));
+  lines.push("");
+  lines.push(
+    "This section is for AI coding agents reading this --help output programmatically."
+  );
+  lines.push(
+    "Find your own agent name in the PER-AGENT REFERENCE table below to get your exact"
+  );
+  lines.push("install command, skills directory, and MCP config location.");
+  lines.push("");
+  lines.push("COMMAND PURPOSES");
+  lines.push("-".repeat(78));
+  lines.push("workspace-sync setup");
+  lines.push("  Initializes/refreshes the PROJECT config only (.workspace-sync/, AGENT_MEMORY.md).");
+  lines.push("  Never writes any agent's skills or MCP config — that's 'install' below.");
+  lines.push("");
+  lines.push("workspace-sync install <agent>");
+  lines.push("  Deploys skills + MCP config for ONE specific agent. Run once per agent, per project.");
+  lines.push("  Safe to re-run: merges into existing MCP config, refreshes skills to current version.");
+  lines.push("");
+  lines.push("workspace-sync update");
+  lines.push("  PROJECT sync. Regenerates AGENT_MEMORY.md and re-runs install for every agent already");
+  lines.push("  installed in this project (tracked in .workspace-sync/installed-agents.json), using the");
+  lines.push("  currently installed WorkspaceSync npm package version. Does NOT fetch a newer package.");
+  lines.push("");
+  lines.push("workspace-sync self-update");
+  lines.push("  PACKAGE update. Upgrades the globally installed 'workspace-sync' npm package itself");
+  lines.push("  (runs 'npm install -g workspace-sync@latest'). Not project-specific. Run this first when");
+  lines.push("  a newer WorkspaceSync version exists, then run 'update' in each project.");
+  lines.push("");
+  lines.push("workspace-sync doctor");
+  lines.push("  Diagnostics: verifies local project paths, tests SSH connectivity to linked Testing/");
+  lines.push("  Production hosts, and warns when installed skills are stale relative to this CLI version.");
+  lines.push("");
+  lines.push("workspace-sync status");
+  lines.push("  Shows registered projects, their local Git status, and linked Testing/Production hosts.");
+  lines.push("");
+  lines.push("workspace-sync mcp");
+  lines.push("  Starts the stdio MCP server. Invoked automatically by your MCP client's own config (e.g.");
+  lines.push("  .vscode/mcp.json, .mcp.json) — do not run this manually during normal use.");
+  lines.push("");
+  lines.push("TYPICAL FLOW");
+  lines.push("-".repeat(78));
+  lines.push("  1. workspace-sync setup                 (once per project)");
+  lines.push("  2. workspace-sync install <your-agent>  (once per agent you use — see table below)");
+  lines.push("  3. workspace-sync update                (anytime, to refresh this project)");
+  lines.push("     workspace-sync self-update            (when a newer WorkspaceSync version is published)");
+  lines.push("");
+  lines.push("PER-AGENT REFERENCE");
+  lines.push("-".repeat(78));
+  lines.push(
+    "Paths below are project-relative (shown as <project>/...) unless prefixed with ~ (user home)."
+  );
+  lines.push("'unverified' means it's a best-effort convention — confirm against that agent's own docs");
+  lines.push("if the install doesn't take effect, and please open an issue so it can be corrected.");
+  lines.push("");
+
+  for (const platform of PLATFORMS) {
+    const info = describeAgent(platform.slug as any);
+    lines.push(`${info.label}  (agent: ${info.slug})`);
+    lines.push(`  Install:  ${info.installCommand}`);
+    lines.push(`  Skills:   ${info.skillsDir}/${info.skillsVerified ? "" : "   [unverified — generic fallback]"}`);
+    if (isSkillsOnlyAgent(platform.slug as any)) {
+      lines.push(`  MCP:      none — ${info.label} has no MCP support, skills only.`);
+    } else {
+      const verifiedNote = info.mcpVerified ? "" : "   [unverified — generic fallback]";
+      lines.push(`  MCP:      ${info.mcpConfig} (${info.mcpFormat.toUpperCase()})${verifiedNote}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(
+    "Kimi Code note: reachable only via 'workspace-sync install --platform kimi' (no 'kimi install' subcommand)."
+  );
+  lines.push(
+    "Agent Skills (cross-framework, slug 'agents') accepts the alias 'skills': 'workspace-sync install skills'."
+  );
+  lines.push("");
+  lines.push(
+    "Each agent above also has a 'workspace-sync <agent> install' subcommand form, but it has proven"
+  );
+  lines.push(
+    "unreliable via npx in some environments. Prefer 'workspace-sync install <agent>' shown above."
+  );
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+program.addHelpText("afterAll", buildAgentReferenceHelp);
 
 program.parse(process.argv);
