@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "workspace-sync": {
+      "type": "stdio",
+      "command": "workspace-sync",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

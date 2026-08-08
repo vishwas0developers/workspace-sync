@@ -1,0 +1,27 @@
+{
+  "name": "workspace-sync",
+  "version": "0.1.0",
+  "description": "Security-hardened local Model Context Protocol (MCP) server for multi-project workspaces linked with Testing/Production VPS",
+  "main": "dist/src/server.js",
+  "bin": {
+    "workspace-sync": "./dist/cli/index.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "ssh2": "^1.15.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/ssh2": "^1.11.19",
+    "typescript": "^5.3.3"
+  }
+}
