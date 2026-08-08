@@ -136,6 +136,98 @@ test("`install gemini` / `install antigravity` write to the user-home Gemini con
   }
 });
 
+test("`workspace-sync claude install` subcommand form writes .mcp.json just like `install claude`", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-subcmd-claude-"));
+  try {
+    runCli(["claude", "install"], scratch);
+    const mcpPath = path.join(scratch, ".mcp.json");
+    assert.ok(fs.existsSync(mcpPath), "expected .mcp.json to be written via subcommand form");
+    assert.strictEqual(JSON.parse(fs.readFileSync(mcpPath, "utf-8")).mcpServers["workspace-sync"].command, "workspace-sync");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync skills install` is an alias for `workspace-sync agents install`", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-subcmd-skills-"));
+  try {
+    runCli(["skills", "install"], scratch);
+    assert.ok(
+      fs.existsSync(path.join(scratch, ".agents", "skills", "workspace-sync-status", "SKILL.md")),
+      "expected skills to be deployed via the 'skills' alias"
+    );
+    assert.ok(!fs.existsSync(path.join(scratch, ".vscode")), "'skills' alias must not write any MCP config");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync install --platform kimi` writes .kimi/mcp.json (Kimi has no direct subcommand)", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-kimi-flag-"));
+  try {
+    runCli(["install", "--platform", "kimi"], scratch);
+    const mcpPath = path.join(scratch, ".kimi", "mcp.json");
+    assert.ok(fs.existsSync(mcpPath), "expected .kimi/mcp.json to be written via --platform flag");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync aider install` deploys skills only — Aider has no MCP support", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-aider-"));
+  try {
+    runCli(["aider", "install"], scratch);
+    assert.ok(
+      fs.existsSync(path.join(scratch, ".agents", "skills", "workspace-sync-status", "SKILL.md")),
+      "expected skills to be deployed for Aider"
+    );
+    assert.ok(!fs.existsSync(path.join(scratch, ".aider")), "Aider has no MCP config to write");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync kiro install` writes .kiro/settings/mcp.json", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-kiro-"));
+  try {
+    runCli(["kiro", "install"], scratch);
+    const mcpPath = path.join(scratch, ".kiro", "settings", "mcp.json");
+    assert.ok(fs.existsSync(mcpPath), "expected .kiro/settings/mcp.json to be written");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync trae install` uses the generic .{slug}/mcp.json fallback", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-trae-"));
+  try {
+    runCli(["trae", "install"], scratch);
+    const mcpPath = path.join(scratch, ".trae", "mcp.json");
+    assert.ok(fs.existsSync(mcpPath), "expected .trae/mcp.json to be written via the generic fallback");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`workspace-sync codex install` writes a TOML mcp_servers table and is idempotent on rerun", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-codex-cwd-"));
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ws-codex-home-"));
+  try {
+    runCli(["codex", "install"], scratch, makeHomeOverrideEnv(fakeHome));
+    const configPath = path.join(fakeHome, ".codex", "config.toml");
+    const firstContent = fs.readFileSync(configPath, "utf-8");
+    assert.ok(firstContent.includes("[mcp_servers.workspace-sync]"), "expected a TOML mcp_servers.workspace-sync table");
+
+    runCli(["codex", "install"], scratch, makeHomeOverrideEnv(fakeHome));
+    const secondContent = fs.readFileSync(configPath, "utf-8");
+    const occurrences = secondContent.split("[mcp_servers.workspace-sync]").length - 1;
+    assert.strictEqual(occurrences, 1, "rerunning install must not duplicate the TOML entry");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
 test("`doctor` warns when installed skills are stale relative to the running CLI version", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-stale-"));
   try {

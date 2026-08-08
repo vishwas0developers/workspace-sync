@@ -7,7 +7,7 @@ import { loadConfig, saveConfig, getConfigDir } from "../src/config/loader";
 import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
-import { installWorkspaceSync, SUPPORTED_AGENTS } from "../install/index";
+import { installWorkspaceSync, SUPPORTED_AGENTS, PLATFORMS } from "../install/index";
 import { saveUndoSnapshot, performUndo } from "../src/config/undo";
 import { discoverProjectCandidates } from "../src/discovery";
 
@@ -427,11 +427,45 @@ program
 program
   .command("install [agent]")
   .description(
-    `Install skills and MCP configuration for an AI agent (${SUPPORTED_AGENTS.join(", ")}; default: vscode)`
+    `Install skills and MCP configuration for an AI agent (${SUPPORTED_AGENTS.join(", ")}; default: vscode). Prefer 'workspace-sync <agent> install'.`
   )
-  .action((agent) => {
+  .option("-p, --platform <platform>", "Agent to install for (overrides the positional argument; used by agents that can't invoke a subcommand)")
+  .action((agent, options) => {
     try {
-      installWorkspaceSync(process.cwd(), agent);
+      installWorkspaceSync(process.cwd(), options.platform || agent);
+    } catch (err: any) {
+      console.error(chalk.red(`Error: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
+// Per-agent subcommands: `workspace-sync <agent> install` (e.g. `workspace-sync claude install`).
+// Kimi Code is reachable only via `workspace-sync install --platform kimi` above.
+for (const platform of PLATFORMS) {
+  if (platform.slug === "kimi") continue;
+  const agentProgram = program.command(platform.slug).description(`${platform.label} integration commands`);
+  agentProgram
+    .command("install")
+    .description(`Install WorkspaceSync skills and MCP configuration for ${platform.label}`)
+    .action(() => {
+      try {
+        installWorkspaceSync(process.cwd(), platform.slug);
+      } catch (err: any) {
+        console.error(chalk.red(`Error: ${err.message}`));
+        process.exitCode = 1;
+      }
+    });
+}
+
+// Alias: `workspace-sync skills install` behaves identically to `workspace-sync agents install`.
+program
+  .command("skills")
+  .description("Agent Skills (cross-framework) integration commands")
+  .command("install")
+  .description("Install WorkspaceSync skills for any skill-compatible agent (no MCP config)")
+  .action(() => {
+    try {
+      installWorkspaceSync(process.cwd(), "agents");
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
       process.exitCode = 1;

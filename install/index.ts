@@ -4,21 +4,65 @@ import * as os from "os";
 
 const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
-export const SUPPORTED_AGENTS = ["vscode", "claude", "cursor", "gemini", "antigravity", "agents"] as const;
+// slug: CLI identifier and `.{slug}/` folder name used by the generic fallback target.
+// label: human-readable platform name, used in README/table generation.
+// Verified conventions are called out; the rest use the generic `.{slug}/mcp.json`
+// fallback (the most common MCP config shape across VS Code-fork agents) and should
+// be confirmed against that agent's actual docs before relying on them.
+export const PLATFORMS: { slug: string; label: string }[] = [
+  { slug: "claude", label: "Claude Code" },
+  { slug: "codebuddy", label: "CodeBuddy" },
+  { slug: "codex", label: "Codex" },
+  { slug: "opencode", label: "OpenCode" },
+  { slug: "kilo", label: "Kilo Code" },
+  { slug: "copilot", label: "GitHub Copilot CLI" },
+  { slug: "vscode", label: "VS Code Copilot Chat" },
+  { slug: "aider", label: "Aider" },
+  { slug: "claw", label: "OpenClaw" },
+  { slug: "droid", label: "Factory Droid" },
+  { slug: "trae", label: "Trae" },
+  { slug: "trae-cn", label: "Trae CN" },
+  { slug: "cursor", label: "Cursor" },
+  { slug: "gemini", label: "Gemini CLI" },
+  { slug: "hermes", label: "Hermes" },
+  { slug: "kimi", label: "Kimi Code" },
+  { slug: "amp", label: "Amp" },
+  { slug: "agents", label: "Agent Skills (cross-framework)" },
+  { slug: "kiro", label: "Kiro IDE/CLI" },
+  { slug: "pi", label: "Pi coding agent" },
+  { slug: "devin", label: "Devin CLI" },
+  { slug: "antigravity", label: "Google Antigravity" },
+];
+
+export const SUPPORTED_AGENTS = [...PLATFORMS.map((p) => p.slug), "skills"] as const;
 export type AgentId = (typeof SUPPORTED_AGENTS)[number];
 
-// Resolves the MCP config file path each agent reads from. `null` means the
-// agent has no dedicated MCP config file (skills-only installation).
-const AGENT_MCP_TARGETS: Record<AgentId, (targetDir: string) => string | null> = {
+// Agents confirmed to have no MCP integration at all — skills-only install.
+const SKILLS_ONLY_AGENTS = new Set<AgentId>(["agents", "skills", "aider"]);
+
+// Verified MCP config paths (confirmed via real files on a dev machine or well-documented
+// public convention). Everything else falls back to `.{slug}/mcp.json`.
+const VERIFIED_MCP_TARGETS: Partial<Record<AgentId, (targetDir: string) => string>> = {
   vscode: (targetDir) => path.join(targetDir, ".vscode", "mcp.json"),
   claude: (targetDir) => path.join(targetDir, ".mcp.json"),
   cursor: (targetDir) => path.join(targetDir, ".cursor", "mcp.json"),
   gemini: () => path.join(os.homedir(), ".gemini", "config", "mcp_config.json"),
   antigravity: () => path.join(os.homedir(), ".gemini", "antigravity-ide", "mcp_config.json"),
-  agents: () => null,
+  kiro: (targetDir) => path.join(targetDir, ".kiro", "settings", "mcp.json"),
 };
 
-// Writes/merges the WorkspaceSync stdio MCP server entry into the given config file,
+function resolveMcpConfigPath(agentId: AgentId, targetDir: string): string | null {
+  if (SKILLS_ONLY_AGENTS.has(agentId)) return null;
+  if (agentId === "codex") return path.join(os.homedir(), ".codex", "config.toml");
+  const verified = VERIFIED_MCP_TARGETS[agentId];
+  if (verified) return verified(targetDir);
+  // Generic fallback: `.{slug}/mcp.json` with the standard `mcpServers` schema —
+  // the most common convention among MCP-supporting editor forks. Unverified for
+  // this specific agent; confirm against its docs if the install doesn't take effect.
+  return path.join(targetDir, `.${agentId}`, "mcp.json");
+}
+
+// Writes/merges the WorkspaceSync stdio MCP server entry into the given JSON config file,
 // preserving any other servers already registered there.
 function writeMcpServerConfig(mcpConfigPath: string): void {
   const mcpDir = path.dirname(mcpConfigPath);
@@ -49,7 +93,31 @@ function writeMcpServerConfig(mcpConfigPath: string): void {
   console.log(`✓ Configured MCP server: ${mcpConfigPath}`);
 }
 
-// Installs WorkspaceSync skills and, unless agent === "agents", the MCP server
+// Codex CLI reads TOML, not JSON. Append a `[mcp_servers.workspace-sync]` table if one
+// isn't already present — a plain-text merge, not a full TOML parser, but sufficient for
+// a single well-known entry without disturbing the rest of the file.
+function writeCodexMcpConfig(configPath: string): void {
+  const dir = path.dirname(configPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  let existing = "";
+  if (fs.existsSync(configPath)) {
+    existing = fs.readFileSync(configPath, "utf-8");
+  }
+
+  if (existing.includes("[mcp_servers.workspace-sync]")) {
+    console.log(`✓ MCP server already configured: ${configPath}`);
+    return;
+  }
+
+  const entry = `\n[mcp_servers.workspace-sync]\ncommand = "workspace-sync"\nargs = ["mcp"]\n`;
+  fs.writeFileSync(configPath, existing.trimEnd() + "\n" + entry, "utf-8");
+  console.log(`✓ Configured MCP server: ${configPath}`);
+}
+
+// Installs WorkspaceSync skills and, unless the agent is skills-only, the MCP server
 // config for the requested AI agent (defaults to "vscode" when omitted).
 export function installWorkspaceSync(targetDir: string = process.cwd(), agent?: string): void {
   const agentId = (agent || "vscode") as AgentId;
@@ -59,9 +127,13 @@ export function installWorkspaceSync(targetDir: string = process.cwd(), agent?: 
     );
   }
 
-  const mcpConfigPath = AGENT_MCP_TARGETS[agentId](targetDir);
+  const mcpConfigPath = resolveMcpConfigPath(agentId, targetDir);
   if (mcpConfigPath) {
-    writeMcpServerConfig(mcpConfigPath);
+    if (agentId === "codex") {
+      writeCodexMcpConfig(mcpConfigPath);
+    } else {
+      writeMcpServerConfig(mcpConfigPath);
+    }
   }
 
   // Clean up the old monolithic skill if it exists

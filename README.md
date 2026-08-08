@@ -26,13 +26,16 @@ This one command:
 
 ### Step 2: Install your AI agent integration
 
-Run the install command for whichever AI coding agent you use — see the [🔌 Agent Installation](#-agent-installation) table below. For example:
+Make your AI agent always aware of your workspace map. Run the install command for whichever AI coding agent you use once per project — see the [🔌 Agent Installation](#-agent-installation) table below. For example:
 
 ```bash
-npx workspace-sync install claude
+workspace-sync claude install
 ```
 
 This writes the MCP server registration for that specific agent and deploys the WorkspaceSync skills to `.agents/skills/`.
+
+> [!IMPORTANT]
+> These commands intentionally do **not** use `npx` — many AI agents cannot invoke `npx` from inside their own tool-call sandbox. Install WorkspaceSync globally first (`npm install -g workspace-sync`, see [Installation](#-installation) below) so the plain `workspace-sync` binary is directly available, then run the Step 2 command from within your agent.
 
 > [!TIP]
 > Already set up but skills feel out of date after upgrading WorkspaceSync? Re-run the Step 2 install command for your agent — `workspace-sync doctor` will warn you if your installed skills are stale.
@@ -43,18 +46,37 @@ The individual commands documented below (`init`, `add-project`, `link-testing`,
 
 ## 🔌 Agent Installation
 
-After running `npx workspace-sync setup` (Step 1 above), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
+After running `workspace-sync setup` (Step 1 above), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
 
 | Platform | Command |
-| :------- | :------ |
-| VS Code / GitHub Copilot | `npx workspace-sync install` |
-| Claude Code | `npx workspace-sync install claude` |
-| Cursor | `npx workspace-sync install cursor` |
-| Gemini CLI | `npx workspace-sync install gemini` |
-| Google Antigravity | `npx workspace-sync install antigravity` |
-| Agent Skills (generic/cross-framework) | `npx workspace-sync install agents` |
+| :--- | :--- |
+| Claude Code | `workspace-sync claude install` |
+| CodeBuddy | `workspace-sync codebuddy install` |
+| Codex | `workspace-sync codex install` |
+| OpenCode | `workspace-sync opencode install` |
+| Kilo Code | `workspace-sync kilo install` |
+| GitHub Copilot CLI | `workspace-sync copilot install` |
+| VS Code Copilot Chat | `workspace-sync vscode install` |
+| Aider | `workspace-sync aider install` |
+| OpenClaw | `workspace-sync claw install` |
+| Factory Droid | `workspace-sync droid install` |
+| Trae | `workspace-sync trae install` |
+| Trae CN | `workspace-sync trae-cn install` |
+| Cursor | `workspace-sync cursor install` |
+| Gemini CLI | `workspace-sync gemini install` |
+| Hermes | `workspace-sync hermes install` |
+| Kimi Code | `workspace-sync install --platform kimi` |
+| Amp | `workspace-sync amp install` |
+| Agent Skills (cross-framework) | `workspace-sync agents install` (alias `workspace-sync skills install`) |
+| Kiro IDE/CLI | `workspace-sync kiro install` |
+| Pi coding agent | `workspace-sync pi install` |
+| Devin CLI | `workspace-sync devin install` |
+| Google Antigravity | `workspace-sync antigravity install` |
 
-Each command is safe to re-run at any time — it merges into any existing MCP config rather than overwriting it, and refreshes skills to the currently installed WorkspaceSync version. Additional agents can be added once their MCP configuration convention is confirmed — open an issue if you'd like one supported.
+Every command is safe to re-run at any time — it merges into any existing MCP config rather than overwriting it, and refreshes skills to the currently installed WorkspaceSync version. `workspace-sync install` with no arguments still works too (defaults to VS Code) for backward compatibility.
+
+> [!NOTE]
+> Config paths for **Claude Code**, **VS Code Copilot Chat**, **Cursor**, **Gemini CLI**, and **Google Antigravity** are confirmed. **Aider** has no MCP support, so its command deploys skills only. **Codex** writes a TOML `mcp_servers` entry (`~/.codex/config.toml`), not JSON. The remaining platforms use a best-effort `.{platform}/mcp.json` convention (the schema shared by most MCP-compatible editor forks) — if a specific one doesn't take effect, please confirm that agent's actual config location and open an issue so it can be corrected.
 
 ---
 
@@ -359,24 +381,26 @@ All commands are executed from your workspace root directory. Most users only ne
 
 ---
 
-> ### 9. `workspace-sync install [agent]`
+> ### 9. `workspace-sync <agent> install` / `workspace-sync install [agent]`
 >
-> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into `.agents/skills/`. See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `[agent]` targets VS Code (`.vscode/mcp.json`) for backward compatibility.
+> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into `.agents/skills/`. See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `[agent]` (bare `workspace-sync install`) targets VS Code (`.vscode/mcp.json`) for backward compatibility.
 >
 > 💻 **Syntax:**
 >
 > ```bash
+> workspace-sync <agent> install
+> # or, equivalently:
 > workspace-sync install [agent]
 > ```
 >
 > 📥 **Arguments:**
 >
-> - `[agent]` (optional): One of `vscode` (default), `claude`, `cursor`, `gemini`, `antigravity`, `agents`.
+> - `<agent>` / `[agent]`: See the [🔌 Agent Installation](#-agent-installation) table for the full list. Kimi Code is reachable only via `workspace-sync install --platform kimi`.
 >
 > 📝 **Example:**
 >
 > ```bash
-> workspace-sync install claude
+> workspace-sync claude install
 > ```
 >
 > 💡 **Note:**
