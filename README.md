@@ -80,6 +80,24 @@ Your workspace is now fully configured and ready for your AI assistant.
 
 All commands are executed from your workspace root directory.
 
+### Command Overview
+
+| Command | Description |
+|---|---|
+| [`workspace-sync init`](#workspace-sync-init) | Initialize the `.workspace-sync/` configuration directory. |
+| [`workspace-sync status`](#workspace-sync-status) | Display a live summary of all registered projects and environments. |
+| [`workspace-sync add-project`](#workspace-sync-add-project) | Register a local project directory in the workspace configuration map. |
+| [`workspace-sync remove-project`](#workspace-sync-remove-project) | Safely unregister project configuration mappings. |
+| [`workspace-sync rename-project`](#workspace-sync-rename-project) | Rename an existing registered project configuration. |
+| [`workspace-sync link-testing`](#workspace-sync-link-testing) | Link a project's Testing VPS environment via an SSH alias. |
+| [`workspace-sync link-production`](#workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias (read-only). |
+| [`workspace-sync doctor`](#workspace-sync-doctor) | Run diagnostics on local paths and SSH host connectivity. |
+| [`workspace-sync install`](#workspace-sync-install) | Write VS Code MCP settings and deploy modular AI agent skills. |
+| [`workspace-sync undo`](#workspace-sync-undo) | Roll back the last reversible configuration change in one step. |
+| [`workspace-sync mcp`](#workspace-sync-mcp) | Start the stdio Model Context Protocol (MCP) server for AI connections. |
+
+---
+
 ### `workspace-sync init`
 
 **Purpose:** Initialize the `.workspace-sync/` configuration directory and generate initial agent memory.
