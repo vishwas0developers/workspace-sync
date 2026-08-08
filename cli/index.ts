@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Command } from "commander";
 import * as fs from "fs";
 import * as path from "path";
@@ -8,6 +9,7 @@ import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
 import { installWorkspaceSync } from "../install/index";
 import { saveUndoSnapshot, performUndo } from "../src/config/undo";
+import { discoverProjectCandidates } from "../src/discovery";
 
 const program = new Command();
 
@@ -20,14 +22,15 @@ program
   .command("init")
   .description("Initialize workspace sync metadata directory")
   .option("-n, --name <name>", "Workspace name", path.basename(process.cwd()))
-  .action((options) => {
+  .option("--no-discover", "Skip automatic project directory discovery")
+  .action(async (options) => {
     const configDir = getConfigDir();
     if (fs.existsSync(configDir)) {
       console.log(chalk.yellow(`WorkspaceSync configuration already exists at ${configDir}`));
       return;
     }
 
-    const config = {
+    const config: any = {
       workspace: {
         schemaVersion: 1 as const,
         name: options.name,
@@ -42,6 +45,54 @@ program
 
     console.log(chalk.green(`✓ WorkspaceSync successfully initialized!`));
     console.log(chalk.gray(`Configuration stored in .workspace-sync/`));
+
+    if (options.discover) {
+      const candidates = discoverProjectCandidates(process.cwd());
+      if (candidates.length > 0) {
+        console.log(chalk.cyan(`\nDetected project candidates:`));
+        candidates.forEach((c, i) => console.log(`  [${i + 1}] ${c.name}`));
+
+        const rl = require("readline").createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const answer: string = await new Promise((resolve) => {
+          rl.question(
+            chalk.gray(`\nSelect projects to register (comma-separated numbers, "all", or blank to skip): `),
+            (a: string) => {
+              rl.close();
+              resolve(a.trim());
+            }
+          );
+        });
+
+        let selected = candidates;
+        if (answer === "" ) {
+          selected = [];
+        } else if (answer.toLowerCase() !== "all") {
+          const indices = answer.split(",").map((s) => parseInt(s.trim(), 10) - 1);
+          selected = candidates.filter((_, i) => indices.includes(i));
+        }
+
+        for (const c of selected) {
+          config.projects[c.name] = { localPath: c.localPath };
+          config.policies[c.name] = {
+            readLocal: true,
+            writeLocal: true,
+            readTesting: true,
+            writeTesting: false,
+            readProduction: true,
+            writeProduction: false,
+          };
+        }
+
+        if (selected.length > 0) {
+          saveConfig(config);
+          generateAgentMemory(config);
+          console.log(chalk.green(`✓ Registered ${selected.length} project(s): ${selected.map((c) => c.name).join(", ")}`));
+        }
+      }
+    }
   });
 
 program

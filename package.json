@@ -4,12 +4,38 @@
   "description": "Security-hardened local Model Context Protocol (MCP) server for multi-project workspaces linked with Testing/Production VPS",
   "main": "dist/src/server.js",
   "bin": {
-    "workspace-sync": "./dist/cli/index.js"
+    "workspace-sync": "dist/cli/index.js"
   },
+  "files": [
+    "dist/cli",
+    "dist/install",
+    "dist/src",
+    "!dist/src/test"
+  ],
   "type": "commonjs",
+  "license": "MIT",
+  "author": "vishwas0developers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishwas0developers/workspace-sync.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "workspace",
+    "ssh",
+    "ai-agent",
+    "vscode",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "pretest": "npm run build",
+    "test": "node --test tests/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

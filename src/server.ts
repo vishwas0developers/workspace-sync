@@ -84,6 +84,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "get_environment",
+        description: "Get detailed connection and policy info for a specific project environment (testing or production).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project name" },
+            environment: { type: "string", enum: ["testing", "production"] },
+          },
+          required: ["project", "environment"],
+        },
+      },
+      {
         name: "compare_environments",
         description: "Compare Git revision differences between testing and production environments.",
         inputSchema: {
@@ -240,6 +252,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const prjName = String(args?.project);
         project = prjName;
         result = listEnvironments(config, prjName);
+        break;
+      }
+      case "get_environment": {
+        const prjName = String(args?.project);
+        const envName = String(args?.environment) as "testing" | "production";
+        project = prjName;
+        environment = envName;
+        result = getEnvironment(config, prjName, envName);
         break;
       }
       case "compare_environments": {
