@@ -1,4 +1,9 @@
+<p align="center">
+  <img src="docs/images/logo.svg" alt="WorkspaceSync Logo" width="600">
+</p>
+
 # WorkspaceSync
+
 
 > Security-hardened local Model Context Protocol (MCP) server & CLI tool that provides AI coding assistants with a persistent map of your workspace projects and remote servers over SSH aliases.
 
