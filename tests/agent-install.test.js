@@ -90,6 +90,10 @@ test("`install badagent` fails clearly and writes nothing", () => {
       output = execFileSync("node", [cliPath, "install", "badagent"], {
         cwd: scratch,
         encoding: "utf-8",
+        // This CLI invocation is expected to fail — pipe (not inherit) stdout/stderr so
+        // the expected "Unknown agent" error is captured for assertions below instead of
+        // being echoed to the `npm test` terminal, where it would look like a real failure.
+        stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (err) {
       output = (err.stdout || "") + (err.stderr || "");
