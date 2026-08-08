@@ -2,6 +2,8 @@
 
 > Security-hardened local Model Context Protocol (MCP) server & CLI tool that provides AI coding assistants with a persistent map of your workspace projects and remote servers over SSH aliases.
 
+If you find this project useful, consider giving it a ⭐ on GitHub!
+
 ---
 
 ## 📋 Requirements
@@ -344,3 +346,5 @@ All commands are executed from your workspace root directory.
 ## 🤝 Contributing
 
 Contributions are welcome! If you would like to help improve WorkspaceSync, please check out the step-by-step guide in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) to learn how to fork, clone, set up, test, and open a Pull Request.
+
+Have an idea, suggestion, or feature request? We'd love to hear it — feel free to open a GitHub Issue or start a Discussion.
