@@ -2,9 +2,77 @@
 
 > Security-hardened local Model Context Protocol (MCP) server & CLI tool that provides AI coding assistants with a persistent map of your workspace projects and remote servers over SSH aliases.
 
-For complete installation, prerequisite checks, and initial workspace setup, see the **[SETUP.md](SETUP.md)** guide.  
-For technical architecture, MCP tool schemas, and internal developer notes, see **[docs/DEVELOPER.md](docs/DEVELOPER.md)**.  
-For contribution guidelines, see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+---
+
+## Requirements
+
+Before installing WorkspaceSync, ensure your environment meets the following requirements:
+
+| Component | Required Version | Verification Command |
+|---|---|---|
+| **Node.js** | `18+` | `node --version` |
+| **npm** | `9+` | `npm --version` |
+| **Git** | Any version | `git --version` |
+| **System SSH** | Standard SSH client | `ssh -V` |
+
+> [!NOTE]
+> **Windows Users**: An active SSH agent (such as OpenSSH for Windows or Pageant) is required. The system `ssh` binary must be available on your system PATH.
+
+---
+
+## Installation
+
+Install WorkspaceSync globally using npm:
+
+```bash
+npm install -g workspace-sync
+```
+
+Verify that the CLI binary is available:
+
+```bash
+workspace-sync --version
+# Output: workspace-sync 0.1.0
+```
+
+---
+
+## Getting Started
+
+Follow these steps in your workspace root directory to configure WorkspaceSync:
+
+### Step 1: Initialize Workspace
+Initialize the `.workspace-sync/` configuration folder in your workspace root directory:
+```bash
+workspace-sync init --name "MyWorkspace"
+```
+
+### Step 2: Register Local Projects
+Add local project directories to WorkspaceSync tracking:
+```bash
+workspace-sync add-project "admin" "./admin-panel" -g "https://github.com/org/admin.git"
+```
+
+### Step 3: Link Remote VPS Environments
+Link your Testing and Production servers using SSH aliases configured in your `~/.ssh/config`:
+```bash
+workspace-sync link-testing "admin" "test-vps" "/var/www/admin"
+workspace-sync link-production "admin" "prod-vps" "/var/www/admin"
+```
+
+### Step 4: Run Diagnostics
+Verify local path resolution and test SSH host connectivity:
+```bash
+workspace-sync doctor
+```
+
+### Step 5: Install Agent Skills & IDE Settings
+Configure `.vscode/mcp.json` and deploy modular AI agent skills into `.agents/skills/`:
+```bash
+workspace-sync install
+```
+
+Your workspace is now fully configured and ready for your AI assistant.
 
 ---
 
@@ -210,13 +278,12 @@ workspace-sync mcp
 
 ## Documentation Links
 
-- **Setup Guide:** [SETUP.md](SETUP.md)
 - **Developer & Architecture Docs:** [docs/DEVELOPER.md](docs/DEVELOPER.md)
-- **Contribution Guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Contribution Guide:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 - **License:** [MIT License](LICENSE)
 
 ---
 
 ## Contributing
 
-Contributions are welcome! If you would like to help improve WorkspaceSync, please check out the step-by-step guide in [CONTRIBUTING.md](CONTRIBUTING.md) to learn how to fork, clone, set up, test, and open a Pull Request.
+Contributions are welcome! If you would like to help improve WorkspaceSync, please check out the step-by-step guide in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) to learn how to fork, clone, set up, test, and open a Pull Request.
