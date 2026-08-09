@@ -21,7 +21,23 @@ If you find this project useful, consider giving it a ⭐ on GitHub!
 
 ---
 
-## ⚡ Quick Setup (Recommended)
+## 📋 Requirements
+
+Before installing WorkspaceSync, ensure your environment meets the following requirements:
+
+| Component      | Required Version    | Verification Command |
+| :------------- | :------------------ | :------------------- |
+| **Node.js**    | `18+`               | `node --version`     |
+| **npm**        | `9+`                | `npm --version`      |
+| **Git**        | Any version         | `git --version`      |
+| **System SSH** | Standard SSH client | `ssh -V`             |
+
+> [!NOTE]
+> **Windows Users**: An active SSH agent (such as OpenSSH for Windows or Pageant) is required. The system `ssh` binary must be available on your system PATH.
+
+---
+
+## ⚡ Quick Setup Guide (Recommended)
 
 Setup is two explicit steps: install the **project**, then install the **AI agent integration** for whichever agent you use. Keeping these separate means `setup` never guesses or writes agent-specific config on your behalf.
 
@@ -53,18 +69,45 @@ This writes the MCP server registration for that specific agent and deploys the 
 > Use the `workspace-sync install "agent"` form shown above and in the table below. The alternate `workspace-sync "agent" install` subcommand form (e.g. `workspace-sync claude install`) is also registered but has been unreliable via `npx` in some environments (it can fail with `error: unknown command`) — prefer `install "agent"`.
 
 > [!IMPORTANT]
-> These commands intentionally do **not** use `npx` — many AI agents cannot invoke `npx` from inside their own tool-call sandbox. Install WorkspaceSync globally first (`npm install -g workspace-sync`, see [Installation](#-installation) below) so the plain `workspace-sync` binary is directly available, then run the Step 2 command from within your agent.
+> These commands intentionally do **not** use `npx` — many AI agents cannot invoke `npx` from inside their own tool-call sandbox. Install WorkspaceSync globally first (`npm install -g workspace-sync`, see [Step 3](#step-3-install-workspacesync-globally-manual) below) so the plain `workspace-sync` binary is directly available, then run the Step 2 command from within your agent.
 
 > [!TIP]
 > Run `workspace-sync --help` for a full agent-by-agent reference (install command, skills directory, MCP config location) — it's written to be easy for an AI agent to read and self-identify in. `workspace-sync doctor` will warn you when a project's installed skills are stale.
 
-The individual commands documented below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
+### Step 3: Install WorkspaceSync globally (manual)
+
+If you'd rather install the CLI once instead of using `npx` each time, install it globally using npm:
+
+```bash
+npm install -g workspace-sync
+```
+
+Verify that the CLI binary is available:
+
+```bash
+workspace-sync --version
+# Output: 0.2.0
+```
+
+> [!IMPORTANT]
+> For full command details, see [docs/COMMANDS.md](docs/COMMANDS.md).
+
+### Step 4: Keep the project updated (manual)
+
+Update the npm package, then run the agent-side update command so everything stays in sync:
+
+```bash
+npm update -g workspace-sync
+workspace-sync update
+```
+
+The individual commands documented in [🏁 Workspace Synchronize Setup](#-manual--advanced-setup) below (`init`, `add-project`, `link-testing`, etc.) remain available for advanced or manual configuration.
 
 ---
 
-## 🔌 Agent Installation
+## 🔌 Agent Installation (Step 2 from Quick Setup Guide)
 
-After running `workspace-sync setup` (Step 1 above), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
+After running `workspace-sync setup` ([⚡ Quick Setup](#-quick-setup-recommended) Step 1), run the matching command below **inside the AI agent you use** to sync WorkspaceSync's skills and MCP configuration for that agent:
 
 | Platform | Command | Skills Directory |
 | :--- | :--- | :--- |
@@ -102,99 +145,25 @@ Every command is safe to re-run at any time — it merges into any existing MCP 
 
 ---
 
-## 🧠 Deployed Skills
+## 🧠 Deployed Skills (installed after Agent Installation)
 
-Every `install` deploys these skills into your agent's skills directory. Your AI assistant loads whichever one matches the task — it does not read them all up front.
+Every `install` deploys these skills into your agent's skills directory. Your AI assistant loads whichever one matches the task — it does not read them all up front. See the [📋 Command Support](#-command-support) table below for how to invoke each one.
 
 | Skill | Use it for |
 | :--- | :--- |
-| **`workspace-sync-investigation`** | **Master command.** The entry point whenever a bug, incident, or regression is reported and the cause is unknown. |
+| **`workspace-sync-investigation`** | **Master command.** The entry point whenever a bug, incident, or regression is reported and the cause is unknown. Read-only — see [docs/COMMANDS.md](docs/COMMANDS.md#agent-skills-for-reference) for the full behavior contract. |
 | `workspace-sync-status` | Which projects are registered, their local Git state, and which environments are linked. |
 | `workspace-sync-doctor` | Diagnosing configuration, local paths, SSH connectivity, and stale-skill problems. |
 | `workspace-sync-debug-testing` | Inspecting files, logs, processes, or Git status on the **Testing** server. |
 | `workspace-sync-debug-production` | Inspecting files, logs, processes, or Git status on the **Production** server. |
 | `workspace-sync-compare-environments` | Checking whether local, Testing, and Production are on the same commit. |
 
-### The investigation master command
-
-When something breaks, point your AI assistant at the investigation skill (for example: *"use the workspace-sync investigation skill — the login page is failing in production"*). It tells the assistant, in one place:
-
-- **What tools it has** — the full MCP tool surface, and that all remote access goes through the SSH aliases you already configured (it never handles hosts, keys, or credentials itself).
-- **What order to look in** — orient on the workspace map, check for deployed-version drift first (a large share of "works locally, breaks in prod" is simply the wrong commit deployed), then read the live logs, then check services/processes, then inspect the specific deployed files the evidence points at.
-- **When to stop** — it works top-down and stops as soon as the evidence identifies the cause, rather than mechanically running every check or crawling your repository.
-- **How to report** — symptom, root cause with the evidence that proves it (log line, revision hash, file path), the required fix, and an honest statement of confidence rather than a guess presented as a finding.
-
-> [!IMPORTANT]
-> Investigation is **read-only**. The skill explicitly forbids mutating Testing or Production — no edits, deploys, restarts, or "let me just try a fix" on a live server. It proposes the fix; a human applies it through the normal local → review → deploy path. It also treats everything returned from a server (logs, file contents, process output) as untrusted **data**, so text on a server that looks like an instruction is reported, never executed.
-
 ---
 
-## 📋 Requirements
-
-Before installing WorkspaceSync, ensure your environment meets the following requirements:
-
-| Component      | Required Version    | Verification Command |
-| :------------- | :------------------ | :------------------- |
-| **Node.js**    | `18+`               | `node --version`     |
-| **npm**        | `9+`                | `npm --version`      |
-| **Git**        | Any version         | `git --version`      |
-| **System SSH** | Standard SSH client | `ssh -V`             |
-
-> [!NOTE]
-> **Windows Users**: An active SSH agent (such as OpenSSH for Windows or Pageant) is required. The system `ssh` binary must be available on your system PATH.
-
----
-
-## 🚀 Installation
-
-Install WorkspaceSync globally using npm:
-
-```bash
-npm install -g workspace-sync
-```
-
-Verify that the CLI binary is available:
-
-```bash
-workspace-sync --version
-# Output: 0.2.0
-```
-
-> [!IMPORTANT]
-> All commands in this document are run as `workspace-sync <command>` directly in your terminal — **never** with a leading slash (e.g. `/workspace-sync status`). A leading slash is only meaningful inside certain AI chat interfaces as a skill-trigger shortcut; typed into PowerShell, Bash, or any standard shell it is not a valid command and will fail (`CommandNotFoundException` in PowerShell, `command not found` in Bash).
-
----
-
-## 🔄 Update vs. Doctor
-
-WorkspaceSync has two related but distinct commands — `update` fetches a new package version; `doctor` repairs drift against whatever version is already installed:
-
-```bash
-workspace-sync update
-```
-
-`update` **is** the command that upgrades the npm package (it runs `npm install -g workspace-sync@latest` for you), then brings this project's skills, MCP config, and configuration schema in sync with whatever version that leaves you on. If a newer version was just installed, skill/config syncing is deferred to the next run — a running process can't hot-swap its own already-loaded code — so **run `workspace-sync update` a second time** to complete the sync; if you were already on the latest version, it syncs immediately in one run.
-
-```bash
-workspace-sync doctor
-```
-
-`doctor` never installs a new package version — it only repairs drift against the **currently installed** version's defaults: skills that were hand-edited, deleted, or never finished installing are restored; a legacy configuration field is migrated safely. It's the command to run any time something looks off, without risking a version change.
-
-**Both commands guarantee your project-specific settings are never touched** — registered projects, environment links, and policies survive untouched (schema migrations only rename/normalize a field, never change its value). Pass `--check-only` to either command to see what would change without writing anything, or `--offline` to skip the published-version check.
-
-If you'd rather update the npm package by hand instead of through `workspace-sync update`, that also works:
-
-```bash
-npm install -g workspace-sync@latest
-```
-
----
-
-## 🏁 Manual / Advanced Setup
+## 🏁 Workspace Synchronize Setup (manually set up or sync your project with its SSH/remote config)
 
 > [!TIP]
-> Most users should use `npx workspace-sync setup` (see [Quick Setup](#-quick-setup-recommended) above) instead of the steps below. Follow these steps only if you need fine-grained, manual control over each part of the configuration.
+> Most users should use `npx workspace-sync setup` (see [⚡ Quick Setup](#-quick-setup-recommended) above) instead of the steps below. Follow these steps only if you need fine-grained, manual control over each part of the configuration.
 
 Follow these steps in your workspace root directory to configure WorkspaceSync:
 
@@ -243,314 +212,42 @@ Your workspace is now fully configured and ready for your AI assistant.
 
 ---
 
-## 🛠️ Command Reference
+## 📋 Command Support (day-to-day commands used regularly)
 
-All commands are executed from your workspace root directory. Most users only need `workspace-sync setup` plus the matching `workspace-sync install "agent"` command; the rest are for advanced/manual use.
+Every command WorkspaceSync ships, in one place — whether it runs in the AI **Agent**, the **Terminal**, or both.
 
-### Command Overview Table
+| Command | Agent | Terminal | Description |
+| :--- | :---: | :---: | :--- |
+| `workspace-sync-investigation` | ✅ | ❌ | **Master analysis command.** Root-cause a bug/incident/regression. Agent-only. |
+| `workspace-sync-debug-testing` | ✅ | ❌ | Inspect files, logs, processes, or Git status on **Testing**. Agent-only. |
+| `workspace-sync-debug-production` | ✅ | ❌ | Inspect files, logs, processes, or Git status on **Production**. Agent-only. |
+| `workspace-sync-compare-environments` | ✅ | ❌ | Check whether local, Testing, and Production are on the same commit. Agent-only. |
+| `workspace-sync-status` | ✅ | ✅ | Live summary of registered projects, local Git state, and linked environments. |
+| `workspace-sync-doctor` | ✅ | ✅ | Diagnose config, local paths, SSH connectivity, and stale-skill drift. |
+| `setup` | ❌ | ✅ | One-command project setup: detect, initialize, discover, verify. |
+| `init` | ❌ | ✅ | Initialize the `.workspace-sync/` configuration directory. |
+| `add-project` | ❌ | ✅ | Register a local project directory in the workspace map. |
+| `remove-project` | ❌ | ✅ | Unregister a project's configuration mapping. |
+| `rename-project` | ❌ | ✅ | Rename an existing registered project. |
+| `link-testing` | ❌ | ✅ | Link a project's Testing VPS via an SSH alias or hostname. |
+| `link-production` | ❌ | ✅ | Link a project's Production VPS via an SSH alias or hostname (read-only). |
+| `install "agent"` | ❌ | ✅ | Write MCP settings and deploy skills for a specific AI agent. |
+| `undo` | ❌ | ✅ | Roll back the last reversible configuration change. |
+| `mcp` | ❌ | ✅ | Start the stdio MCP server (invoked automatically, not run by hand). |
+| `update` | ❌ | ✅ | Install the latest published package, then repair drift against it. |
 
-| Command                                                               | Description                                                               |
-| :-------------------------------------------------------------------- | :------------------------------------------------------------------------ |
-| [`workspace-sync setup`](#0-workspace-sync-setup)                     | One-command **project** setup: detect, initialize, discover, verify (recommended). |
-| [`workspace-sync init`](#1-workspace-sync-init)                       | Initialize the `.workspace-sync/` configuration directory.                |
-| [`workspace-sync status`](#2-workspace-sync-status)                   | Display a live summary of all registered projects and environments.       |
-| [`workspace-sync add-project`](#3-workspace-sync-add-project)         | Register a local project directory in the workspace configuration map.    |
-| [`workspace-sync remove-project`](#4-workspace-sync-remove-project)   | Safely unregister project configuration mappings.                         |
-| [`workspace-sync rename-project`](#5-workspace-sync-rename-project)   | Rename an existing registered project configuration.                      |
-| [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias or hostname.    |
-| [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias or hostname (read-only). |
-| [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Repair drift (skills, config schema) against the currently installed version; check local paths and SSH connectivity. Never installs a new package. |
-| [`workspace-sync install "agent"`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
-| [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
-| [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
-| [`workspace-sync update`](#12-workspace-sync-update)                  | Install the latest published package, then repair drift (skills, config schema) against it — see [🔄 Update vs. Doctor](#-update-vs-doctor). |
+**How to run each:**
+- **Agent** (✅ in the Agent column): invoke with a leading slash, e.g. `/workspace-sync-status`, `/workspace-sync-investigation`. This only works inside your AI agent's own chat interface.
+- **Terminal** (✅ in the Terminal column): run as `workspace-sync <command>` with **no** leading slash, e.g. `workspace-sync status`, `workspace-sync setup`. A slash-prefixed form typed into PowerShell/Bash is not a valid command and will fail.
+- **Agent-only rows** (❌ in Terminal): `workspace-sync-investigation` and the three remote debug/compare skills have no terminal equivalent — they drive read-only analysis over MCP and exist **exclusively** inside the agent, by design (they need live agent reasoning over multiple tool calls, not a single CLI invocation).
 
----
-
-### Command Details
-
-> ### 0. `workspace-sync setup`
->
-> 📌 **Purpose:** One-command **project** setup (recommended). Detects the current workspace and project folders, initializes `.workspace-sync/` (or preserves it if it already exists), auto-registers detected projects, and generates `AGENT_MEMORY.md` — all with minimal interaction. Does **not** write any AI agent or MCP configuration; run `workspace-sync install "agent"` separately for that (see [🔌 Agent Installation](#-agent-installation)).
->
-> 💻 **Syntax:**
->
-> ```bash
-> npx workspace-sync setup
-> ```
->
-> 💡 **Note:**
-> Safe to re-run at any time — existing configuration and manually registered projects are preserved, not overwritten.
-
----
-
-> ### 1. `workspace-sync init`
->
-> 📌 **Purpose:** Initialize the `.workspace-sync/` configuration directory and generate initial agent memory.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync init [options]
-> ```
->
-> ⚙️ **Options:**
->
-> - `-n, --name "name"`: Custom workspace display name (defaults to current folder name).
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync init --name "MyWorkspace"
-> ```
-
----
-
-> ### 2. `workspace-sync status`
->
-> 📌 **Purpose:** Display a live summary of all registered projects, local Git statuses, and linked VPS environment paths.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync status
-> ```
-
----
-
-> ### 3. `workspace-sync add-project`
->
-> 📌 **Purpose:** Register a local project directory in the workspace configuration map.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync add-project "name" "localPath" [options]
-> ```
->
-> 📥 **Arguments:**
->
-> - `"name"`: Unique project identifier.
-> - `"localPath"`: Relative or absolute path to the local project directory.
->
-> ⚙️ **Options:**
->
-> - `-g, --git "repository"`: Git remote repository URL or identifier.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync add-project "admin" "./admin-panel" -g "https://github.com/org/admin.git"
-> ```
-
----
-
-> ### 4. `workspace-sync remove-project`
->
-> 📌 **Purpose:** Safely unregister project metadata and configuration mappings from WorkspaceSync.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync remove-project "project" [options]
-> ```
->
-> 📥 **Arguments:**
->
-> - `"project"`: Name of the project to remove.
->
-> ⚙️ **Options:**
->
-> - `-y, --yes`: Skip confirmation prompt.
->
-> 💡 **Note:**
-> This command only removes WorkspaceSync metadata configuration. It does **not** delete local source code files, Git repositories, remote server files, or SSH settings.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync remove-project "admin" -y
-> ```
-
----
-
-> ### 5. `workspace-sync rename-project`
->
-> 📌 **Purpose:** Rename an existing registered project configuration without modifying any files or directories on disk.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync rename-project "currentName" "newName"
-> ```
->
-> 📥 **Arguments:**
->
-> - `"currentName"`: Existing project identifier.
-> - `"newName"`: New project identifier.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync rename-project "old-admin" "admin-panel"
-> ```
-
----
-
-> ### 6. `workspace-sync link-testing`
->
-> 📌 **Purpose:** Link a project's Testing VPS environment via an SSH alias (or hostname) and remote directory path.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync link-testing "project" "sshAliasOrHost" "remotePath"
-> ```
->
-> 📥 **Arguments:**
->
-> - `"project"`: Registered project identifier.
-> - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname (never raw passwords or keys).
-> - `"remotePath"`: Absolute path to project root on remote server.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync link-testing "admin" "test-vps" "/var/www/admin"
-> ```
-
----
-
-> ### 7. `workspace-sync link-production`
->
-> 📌 **Purpose:** Link a project's Production VPS environment via an SSH alias (or hostname) and remote directory path (strictly read-only).
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync link-production "project" "sshAliasOrHost" "remotePath"
-> ```
->
-> 📥 **Arguments:**
->
-> - `"project"`: Registered project identifier.
-> - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname.
-> - `"remotePath"`: Absolute path to project root on remote server.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync link-production "admin" "prod-vps" "/var/www/admin"
-> ```
-
----
-
-> ### 8. `workspace-sync doctor`
->
-> 📌 **Purpose:** Diagnose and repair drift against the **currently installed** WorkspaceSync version — never installs a newer package (see [`update`](#12-workspace-sync-update) for that). Checks configuration integrity (migrating a legacy field name if found, without changing its value), reconciles each installed agent's skills back to the current version's defaults (restoring hand-edited, deleted, or never-fully-installed skill files), and checks local directory existence and SSH connectivity to linked VPS hosts. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync doctor
-> ```
->
-> ⚙️ **Options:**
->
-> - `--check-only`: Report drift without repairing anything.
-> - `--offline`: Skip the (informational-only) check for a newer published version.
->
-> 💡 **Note:**
-> Safe to run anytime — it's read-only for project-specific settings and only rewrites skill files/MCP config back to the current version's defaults.
-
----
-
-> ### 9. `workspace-sync install "agent"`
->
-> 📌 **Purpose:** Write MCP settings for a specific AI agent and deploy WorkspaceSync skills into that agent's skills directory (`.claude/skills/` for Claude Code, `.agents/skills/` for everything else). See [🔌 Agent Installation](#-agent-installation) for the full agent → command table. Omitting `"agent"` (bare `workspace-sync install`) targets VS Code (`.vscode/mcp.json`) for backward compatibility.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync install "agent"
-> ```
->
-> 📥 **Arguments:**
->
-> - `"agent"`: See the [🔌 Agent Installation](#-agent-installation) table for the full list. Kimi Code is reachable only via `workspace-sync install --platform kimi`.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync install claude
-> npx workspace-sync install antigravity
-> ```
->
-> 💡 **Note:**
-> Merges into any existing MCP config file rather than overwriting it, and is safe to re-run any time (`workspace-sync doctor` and `workspace-sync update` also refresh skills, without you needing to name the agent again). A per-agent subcommand form also exists (`workspace-sync "agent" install`, e.g. `workspace-sync claude install`) but has been unreliable over `npx` in some environments — prefer `install "agent"` shown above.
-
----
-
-> ### 10. `workspace-sync undo`
->
-> 📌 **Purpose:** Perform a single-step atomic rollback of the last reversible workspace operation (`add-project`, `remove-project`, `rename-project`, `link-testing`, `link-production`).
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync undo [options]
-> ```
->
-> ⚙️ **Options:**
->
-> - `-y, --yes`: Skip confirmation prompt.
->
-> 📝 **Example:**
->
-> ```bash
-> workspace-sync remove-project "admin" -y
-> workspace-sync undo -y
-> ```
-
----
-
-> ### 11. `workspace-sync mcp`
->
-> 📌 **Purpose:** Start the stdio Model Context Protocol (MCP) server for IDE and AI agent connections.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync mcp
-> ```
->
-> 💡 **Note:**
-> This command is invoked automatically by VS Code or your MCP client via `.vscode/mcp.json`. Do not run manually during normal usage.
-
----
-
-> ### 12. `workspace-sync update`
->
-> 📌 **Purpose:** Install the **latest published WorkspaceSync version**, then run the same drift repair `doctor` does (skills + configuration schema) against that new version. See [🔄 Update vs. Doctor](#-update-vs-doctor) for the full distinction from `doctor`.
->
-> 💻 **Syntax:**
->
-> ```bash
-> workspace-sync update
-> ```
->
-> ⚙️ **Options:**
->
-> - `--check-only`: Report what would change without installing or writing anything.
-> - `--offline`: Skip the npm registry check; only sync skills/config against whatever version is currently installed.
->
-> 💡 **Note:**
-> If a newer version was just installed, skill/config syncing is deferred to the next run — a running Node process can't hot-swap its own already-loaded code — so run `workspace-sync update` a second time to complete the sync. If you were already on the latest version, it syncs immediately in one run. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
+📖 Full syntax, arguments, options, and examples for every terminal command live in **[docs/COMMANDS.md](docs/COMMANDS.md)**.
 
 ---
 
 ## 📚 Documentation Links
 
+- **Full Command Reference:** [docs/COMMANDS.md](docs/COMMANDS.md)
 - **Developer & Architecture Docs:** [docs/DEVELOPER.md](docs/DEVELOPER.md)
 - **Contribution Guide:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 - **License:** [MIT License](LICENSE)
