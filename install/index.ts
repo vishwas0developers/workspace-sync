@@ -303,10 +303,18 @@ Local investigation:
 Remote investigation (works on \`testing\` and \`production\`, over the project's SSH alias):
 - \`remote_git_revision\` — which commit is actually deployed right now.
 - \`remote_git_status\` — uncommitted/drifted files on the server.
-- \`remote_logs\` — service logs (systemd unit, docker, pm2, or syslog). Usually where the real error is.
+- \`remote_logs\` — service logs. Accepts a systemd unit name, \`syslog\`, \`pm2:<app>\`,
+  \`docker:<container>\`, or \`file:<path>\` for file-backed logs (Laravel, nginx, etc.) —
+  use \`file:\` whenever the stack doesn't log through journald, since journalctl on an
+  unmatched unit returns an empty, misleadingly quiet result.
 - \`remote_services\` — which services are active/failed.
 - \`remote_processes\` — what is actually running.
 - \`remote_tree\`, \`remote_file_read\` — inspect deployed files and their contents.
+  \`remote_tree\` hides dotfiles by default; pass \`showHidden: true\` to see \`.git\`/\`.env*\`
+  when the investigation needs them (e.g. confirming whether a directory is a repo root).
+- \`remote_db_schema\`, \`remote_db_query\` — read-only database inspection (table lists,
+  \`DESCRIBE\`, and \`SELECT\`/\`SHOW\`/\`DESCRIBE\`/\`EXPLAIN\` only — mutating statements are
+  rejected server-side, not just discouraged).
 
 Cross-environment:
 - \`compare_environments\` — Git revision drift between local, Testing, and Production.
@@ -330,9 +338,14 @@ every step mechanically.
 3. **Check for version drift first.** Run \`compare_environments\` (or
  \`remote_git_revision\` per environment) plus \`local_git_status\`. A large share of
  "works locally, breaks in prod" incidents is simply the wrong commit deployed. If the
- revisions differ, that is a prime suspect — report it before digging further.
+ revisions differ, that is a prime suspect — report it before digging further. If a git
+ tool reports "not a git repository", the configured \`remotePath\` may point above the
+ real project root (\`doctor\` and \`link-*\` now flag this automatically, but a link made
+ before an upgrade can still be wrong) — do not assume the deployment has no Git repo.
 4. **Read the actual error.** Use \`remote_logs\` on the affected environment. This is
  normally the fastest route to the true cause. Widen \`limit\` if the error is not visible.
+ If the stack logs to files rather than journald, an empty systemd-unit result is not
+ evidence of "no error" — retry with \`file:<path-to-log>\`.
 5. **Check the runtime.** If logs are empty, inconclusive, or suggest the app is not
  running: \`remote_services\` (is the unit active or failed?) and \`remote_processes\`
  (is the process actually up?).
@@ -435,6 +448,7 @@ Use this skill when inspecting the Testing VPS environment for a project.
 - Inspecting directories and files on Testing VPS (\`remote_tree\`, \`remote_file_read\` on testing).
 - Checking active processes or services on Testing VPS (\`remote_processes\`, \`remote_services\` on testing).
 - Viewing git status on Testing VPS (\`remote_git_status\` on testing).
+- Inspecting database tables/schema or running a read-only query on Testing (\`remote_db_schema\`, \`remote_db_query\` on testing).
 
 ## Required MCP Tools
 - \`remote_tree\`
@@ -443,6 +457,8 @@ Use this skill when inspecting the Testing VPS environment for a project.
 - \`remote_logs\`
 - \`remote_services\`
 - \`remote_processes\`
+- \`remote_db_schema\`
+- \`remote_db_query\`
 
 ## Context Discipline (Command-Driven Execution)
 Call the required MCP tool directly for the requested inspection — this skill file is the complete reference. Do not read \`README.md\`, \`package.json\`, or any source file first, and do not read \`AGENT_MEMORY.md\` or other skills unless the task needs them. If invoking the equivalent \`workspace-sync\` CLI command in a terminal, never prefix it with a slash — \`/workspace-sync ...\` is not valid shell syntax.
@@ -468,12 +484,15 @@ Use this skill when inspecting the Production VPS environment for a project.
 - Inspecting directories and files on Production VPS (\`remote_tree\`, \`remote_file_read\` on production).
 - Checking active processes or services on Production VPS (\`remote_processes\`, \`remote_services\` on production).
 - Viewing git status on Production VPS (\`remote_git_status\` on production).
+- Inspecting database tables/schema or running a read-only query on Production (\`remote_db_schema\`, \`remote_db_query\` on production).
 
 ## Required MCP Tools
 - \`remote_tree\`
 - \`remote_file_read\`
 - \`remote_git_status\`
 - \`remote_logs\`
+- \`remote_db_schema\`
+- \`remote_db_query\`
 - \`remote_services\`
 - \`remote_processes\`
 

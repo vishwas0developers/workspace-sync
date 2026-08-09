@@ -17,6 +17,8 @@ import {
   remoteProcesses
 } from "./tools/remote";
 import { getLocalGitInfo } from "./tools/local";
+import { remoteDbQuery, remoteDbSchema } from "./tools/database";
+import { CommandRejectedError } from "./security/command-guard";
 import { logAudit } from "./audit/logger";
 import * as path from "path";
 
@@ -117,6 +119,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             project: { type: "string", description: "Project name" },
             environment: { type: "string", enum: ["testing", "production"] },
+            path: { type: "string", description: "Relative subdirectory to list (default: project root)" },
+            depth: { type: "number", description: "Max listing depth (default 2)" },
+            showHidden: { type: "boolean", description: "Include dotfiles/dotdirs such as .git and .env* (default false)" },
           },
           required: ["project", "environment"],
         },
@@ -130,6 +135,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             project: { type: "string", description: "Project name" },
             environment: { type: "string", enum: ["testing", "production"] },
             path: { type: "string", description: "Relative file path" },
+            offset: { type: "number", description: "1-based starting line, for reading a range of a large file" },
+            limit: { type: "number", description: "Max lines to return when offset/limit is used" },
           },
           required: ["project", "environment", "path"],
         },
@@ -166,10 +173,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             project: { type: "string", description: "Project name" },
             environment: { type: "string", enum: ["testing", "production"] },
-            service: { type: "string", description: "Service unit name or syslog" },
+            service: { type: "string", description: "Systemd unit name, 'syslog', 'file:<relative-or-/var/log-path>', 'pm2:<app>', or 'docker:<container>'" },
             limit: { type: "number", description: "Lines limit" },
+            grep: { type: "string", description: "Case-insensitive substring filter applied to returned lines" },
           },
           required: ["project", "environment", "service"],
+        },
+      },
+      {
+        name: "remote_db_schema",
+        description: "List tables, or describe a single table's columns, in the project's database on a remote environment. Read-only.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project name" },
+            environment: { type: "string", enum: ["testing", "production"] },
+            table: { type: "string", description: "Optional table name to DESCRIBE; omit to SHOW TABLES" },
+            envFile: { type: "string", description: "Relative path to the app's env file holding DB_* credentials (default: .env)" },
+          },
+          required: ["project", "environment"],
+        },
+      },
+      {
+        name: "remote_db_query",
+        description: "Run a read-only SELECT/SHOW/DESCRIBE/EXPLAIN query against the project's database on a remote environment. Mutating statements are rejected.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            project: { type: "string", description: "Project name" },
+            environment: { type: "string", enum: ["testing", "production"] },
+            sql: { type: "string", description: "A single SELECT, SHOW, DESCRIBE, or EXPLAIN statement" },
+            limit: { type: "number", description: "Row cap appended to SELECT statements without an explicit LIMIT (default 200)" },
+            envFile: { type: "string", description: "Relative path to the app's env file holding DB_* credentials (default: .env)" },
+          },
+          required: ["project", "environment", "sql"],
         },
       },
       {
@@ -276,7 +313,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const envName = String(args?.environment) as "testing" | "production";
         project = prjName;
         environment = envName;
-        result = await remoteTree(config, prjName, envName);
+        result = await remoteTree(config, prjName, envName, {
+          path: args?.path ? String(args.path) : undefined,
+          depth: args?.depth !== undefined ? Number(args.depth) : undefined,
+          showHidden: Boolean(args?.showHidden),
+        });
         break;
       }
       case "remote_file_read": {
@@ -285,7 +326,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const filePath = String(args?.path);
         project = prjName;
         environment = envName;
-        result = await remoteFileRead(config, prjName, envName, filePath);
+        result = await remoteFileRead(config, prjName, envName, filePath, {
+          offset: args?.offset !== undefined ? Number(args.offset) : undefined,
+          limit: args?.limit !== undefined ? Number(args.limit) : undefined,
+        });
+        break;
+      }
+      case "remote_db_schema": {
+        const prjName = String(args?.project);
+        const envName = String(args?.environment) as "testing" | "production";
+        project = prjName;
+        environment = envName;
+        result = await remoteDbSchema(config, prjName, envName, {
+          table: args?.table ? String(args.table) : undefined,
+          envFile: args?.envFile ? String(args.envFile) : undefined,
+        });
+        break;
+      }
+      case "remote_db_query": {
+        const prjName = String(args?.project);
+        const envName = String(args?.environment) as "testing" | "production";
+        const sql = String(args?.sql);
+        project = prjName;
+        environment = envName;
+        result = await remoteDbQuery(config, prjName, envName, sql, {
+          limit: args?.limit !== undefined ? Number(args.limit) : undefined,
+          envFile: args?.envFile ? String(args.envFile) : undefined,
+        });
         break;
       }
       case "remote_git_status": {
@@ -311,7 +378,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const limit = Number(args?.limit || 200);
         project = prjName;
         environment = envName;
-        result = await remoteLogs(config, prjName, envName, service, limit);
+        result = await remoteLogs(config, prjName, envName, service, limit, {
+          grep: args?.grep ? String(args.grep) : undefined,
+        });
         break;
       }
       case "remote_services": {
@@ -356,12 +425,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   } catch (err: any) {
     success = false;
+
+    // A best-effort classification so an agent can tell "permission denied" from
+    // "host unreachable" from "not found" without re-parsing free-text messages —
+    // previously every failure returned only `err.message` with no code at all.
+    let code = "internal_error";
+    if (err instanceof CommandRejectedError) code = "command_rejected";
+    else if (/Permission Denied/i.test(err.message)) code = "permission_denied";
+    else if (/Access Denied/i.test(err.message)) code = "access_denied";
+    else if (/not found in workspace configuration|not configured for project/i.test(err.message)) code = "not_configured";
+    else if (/SSH executable not found/i.test(err.message)) code = "ssh_missing";
+    else if (/timed out/i.test(err.message)) code = "timeout";
+    else if (/not a Git repository/i.test(err.message)) code = "not_a_git_repo";
+    else if (/Policy not configured/i.test(err.message)) code = "policy_missing";
+
     return {
       isError: true,
       content: [
         {
           type: "text",
-          text: err.message,
+          text: JSON.stringify({ code, message: err.message }, null, 2),
         },
       ],
     };

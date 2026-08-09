@@ -1,4 +1,20 @@
+import * as fs from "fs";
+import * as path from "path";
 import { FullConfig } from "../config/loader";
+
+// Detects the project's own `.git` directory at its configured localPath. Previously
+// `git` was always reported as "none" (schema.ts has no such field and nothing ever
+// populated it at runtime), which misled agents into treating version-controlled
+// projects — like 1.admin-iticareer.kdhakar.com, which does have its own repo — as
+// unmanaged.
+function detectLocalGit(localPath: string): string {
+  try {
+    const resolved = path.isAbsolute(localPath) ? localPath : path.resolve(process.cwd(), localPath);
+    return fs.existsSync(path.join(resolved, ".git")) ? "detected" : "none";
+  } catch {
+    return "none";
+  }
+}
 
 export interface ProjectInfo {
   name: string;
@@ -25,7 +41,7 @@ export function listProjects(config: FullConfig): ProjectInfo[] {
     return {
       name,
       localPath: prj.localPath,
-      git: prj.git || "none",
+      git: prj.git || detectLocalGit(prj.localPath),
       environments: {
         testing: envs.testing ? envs.testing.sshAliasOrHost : null,
         production: envs.production ? envs.production.sshAliasOrHost : null,

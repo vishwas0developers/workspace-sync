@@ -25,6 +25,71 @@ const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
 const program = new Command();
 
+// Validates a remotePath before it's persisted, and — unless skipped — probes it over
+// SSH so a misconfiguration like remotePath pointing one level above the actual
+// project root (the bug that broke every remote tool in this workspace) is caught at
+// link time instead of silently accepted and discovered later via cryptic
+// "not a git repository" errors from unrelated tools.
+async function validateAndProbeRemotePath(
+  sshAliasOrHost: string,
+  remotePath: string,
+  opts: { verify: boolean }
+): Promise<void> {
+  if (!remotePath.startsWith("/")) {
+    throw new Error(
+      `remotePath must be an absolute POSIX path (starting with '/'); got '${remotePath}'. Windows-style or relative paths cannot be resolved on the remote host.`
+    );
+  }
+
+  if (!opts.verify) {
+    console.log(chalk.gray(`  (skipped remote verification: --no-verify)`));
+    return;
+  }
+
+  const dirCheck = await executeSSHCommand(sshAliasOrHost, `stat -c %F ${shellQuoteForCli(remotePath)}`);
+  if (dirCheck.code !== 0 || !dirCheck.stdout.includes("directory")) {
+    console.log(
+      chalk.yellow(`  ⚠ Could not confirm '${remotePath}' exists as a directory on '${sshAliasOrHost}' (${dirCheck.stderr || "not found"}). Saved anyway — verify manually.`)
+    );
+    return;
+  }
+
+  const gitCheck = await executeSSHCommand(sshAliasOrHost, `find ${shellQuoteForCli(remotePath)} -maxdepth 1 -name .git`);
+  if (gitCheck.code === 0 && gitCheck.stdout.trim().length > 0) {
+    console.log(chalk.green(`  ✓ Verified: '${remotePath}' contains a .git directory.`));
+    return;
+  }
+
+  // No .git directly here — check one level down for the likely-intended root, which
+  // is exactly the shape of the misconfiguration this validation exists to catch
+  // (remotePath set to the htdocs parent instead of the vhost directory inside it).
+  const childScan = await executeSSHCommand(sshAliasOrHost, `find ${shellQuoteForCli(remotePath)} -maxdepth 2 -name .git`);
+  if (childScan.code === 0 && childScan.stdout.trim().length > 0) {
+    const candidates = childScan.stdout
+      .trim()
+      .split("\n")
+      .map((p) => p.replace(/\/\.git$/, ""));
+    console.log(
+      chalk.yellow(
+        `  ⚠ '${remotePath}' has no .git of its own, but a subdirectory does: ${candidates.join(", ")}. ` +
+        `remotePath is likely meant to be one of these, not their parent. Saved as given — re-link with the corrected path if this is the mistake.`
+      )
+    );
+    return;
+  }
+
+  console.log(
+    chalk.yellow(`  ⚠ '${remotePath}' exists but no .git was found in it or its immediate subdirectories. Saved anyway — confirm this is the intended project root.`)
+  );
+}
+
+// Minimal POSIX single-quote escaping for CLI-side probe commands built from a
+// user-supplied remotePath — mirrors src/security/command-guard.ts's shellQuote so a
+// path containing a space or metacharacter can't break the probe command.
+function shellQuoteForCli(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 program
   .name("workspace-sync")
   .description("WorkspaceSync MCP management command-line interface")
@@ -257,13 +322,16 @@ program
   .command("link-testing <project> <sshAliasOrHost> <remotePath>")
   .usage('"<project>" "<sshAliasOrHost>" "<remotePath>"')
   .description("Link testing environment to project (sshAliasOrHost: an SSH alias from ~/.ssh/config, or a hostname)")
-  .action((project, sshAliasOrHost, remotePath) => {
+  .option("--no-verify", "Skip the SSH probe that checks remotePath exists and looks like a project root")
+  .action(async (project, sshAliasOrHost, remotePath, options) => {
     try {
       const config = loadConfig();
       if (!config.projects[project]) {
         console.error(chalk.red(`Error: Project '${project}' does not exist.`));
         return;
       }
+
+      await validateAndProbeRemotePath(sshAliasOrHost, remotePath, { verify: options.verify !== false });
 
       saveUndoSnapshot("link-testing", `Link testing environment for project "${project}"`);
 
@@ -281,6 +349,7 @@ program
       console.log(chalk.green(`✓ Testing environment linked for project '${project}'!`));
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
+      process.exitCode = 1;
     }
   });
 
@@ -288,13 +357,16 @@ program
   .command("link-production <project> <sshAliasOrHost> <remotePath>")
   .usage('"<project>" "<sshAliasOrHost>" "<remotePath>"')
   .description("Link production environment to project (sshAliasOrHost: an SSH alias from ~/.ssh/config, or a hostname)")
-  .action((project, sshAliasOrHost, remotePath) => {
+  .option("--no-verify", "Skip the SSH probe that checks remotePath exists and looks like a project root")
+  .action(async (project, sshAliasOrHost, remotePath, options) => {
     try {
       const config = loadConfig();
       if (!config.projects[project]) {
         console.error(chalk.red(`Error: Project '${project}' does not exist.`));
         return;
       }
+
+      await validateAndProbeRemotePath(sshAliasOrHost, remotePath, { verify: options.verify !== false });
 
       saveUndoSnapshot("link-production", `Link production environment for project "${project}"`);
 
@@ -312,6 +384,7 @@ program
       console.log(chalk.green(`✓ Production environment linked for project '${project}'!`));
     } catch (err: any) {
       console.error(chalk.red(`Error: ${err.message}`));
+      process.exitCode = 1;
     }
   });
 
@@ -801,6 +874,38 @@ program
           console.log(`  - ${title} host check [${check.alias}]:`);
           if (check.ok) {
             console.log(chalk.green(`      ✓ ${check.detail}`));
+
+            // Connectivity is fine; now verify remotePath itself actually looks like
+            // the project root. This is the check that was missing when this
+            // workspace's testing remotePath pointed one directory above the real
+            // app root — `doctor` reported success while every remote tool failed.
+            const envConfig = config.environments[prj]?.[check.envLabel as "testing" | "production"];
+            if (envConfig) {
+              const gitCheck = await executeSSHCommand(
+                check.alias,
+                `find ${shellQuoteForCli(envConfig.remotePath)} -maxdepth 1 -name .git`
+              ).catch(() => ({ code: 1, stdout: "", stderr: "probe failed" } as const));
+              if (gitCheck.code === 0 && gitCheck.stdout.trim().length > 0) {
+                console.log(chalk.green(`      ✓ remotePath '${envConfig.remotePath}' contains a .git directory.`));
+              } else {
+                const childScan = await executeSSHCommand(
+                  check.alias,
+                  `find ${shellQuoteForCli(envConfig.remotePath)} -maxdepth 2 -name .git`
+                ).catch(() => ({ code: 1, stdout: "", stderr: "probe failed" } as const));
+                if (childScan.code === 0 && childScan.stdout.trim().length > 0) {
+                  const candidates = childScan.stdout.trim().split("\n").map((p) => p.replace(/\/\.git$/, ""));
+                  console.log(
+                    chalk.yellow(
+                      `      ⚠ remotePath '${envConfig.remotePath}' has no .git of its own; found one in: ${candidates.join(", ")}. ` +
+                      `remotePath is likely misconfigured — re-run 'link-${check.envLabel}' with the corrected path.`
+                    )
+                  );
+                  warnings++;
+                } else {
+                  console.log(chalk.gray(`      - remotePath '${envConfig.remotePath}': no .git found nearby (may be a non-Git deployment).`));
+                }
+              }
+            }
           } else {
             console.log(chalk.red(`      ✗ ${check.detail}`));
             problems++;

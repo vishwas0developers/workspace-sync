@@ -145,14 +145,18 @@ Every command below is documented as a single self-contained block: purpose, syn
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-testing "project" "sshAliasOrHost" "remotePath"
+> workspace-sync link-testing "project" "sshAliasOrHost" "remotePath" [options]
 > ```
 >
 > 📥 **Arguments:**
 >
 > - `"project"`: Registered project identifier.
 > - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname (never raw passwords or keys).
-> - `"remotePath"`: Absolute path to project root on remote server.
+> - `"remotePath"`: Absolute POSIX path (must start with `/`) to the project root on the remote server — the directory that directly contains the deployed app (and its `.git`, if any), not a parent `htdocs`/vhost-container directory above it.
+>
+> ⚙️ **Options:**
+>
+> - `--no-verify`: Skip the SSH probe that checks `remotePath` exists and looks like a project root. By default, `link-testing` connects over SSH and warns if `remotePath` has no `.git` of its own but a subdirectory does — the exact misconfiguration shape (remotePath pointing one level too high) that otherwise silently breaks every remote git/file tool.
 >
 > 📝 **Example:**
 >
@@ -169,14 +173,18 @@ Every command below is documented as a single self-contained block: purpose, syn
 > 💻 **Syntax:**
 >
 > ```bash
-> workspace-sync link-production "project" "sshAliasOrHost" "remotePath"
+> workspace-sync link-production "project" "sshAliasOrHost" "remotePath" [options]
 > ```
 >
 > 📥 **Arguments:**
 >
 > - `"project"`: Registered project identifier.
 > - `"sshAliasOrHost"`: an SSH alias defined in `~/.ssh/config`, or a hostname.
-> - `"remotePath"`: Absolute path to project root on remote server.
+> - `"remotePath"`: Absolute POSIX path (must start with `/`) to the project root on the remote server — see the note under `link-testing` above about avoiding a parent-directory misconfiguration.
+>
+> ⚙️ **Options:**
+>
+> - `--no-verify`: Skip the SSH probe that checks `remotePath` exists and looks like a project root (same probe as `link-testing`).
 >
 > 📝 **Example:**
 >
@@ -188,7 +196,7 @@ Every command below is documented as a single self-contained block: purpose, syn
 
 > ### 8. `workspace-sync doctor`
 >
-> 📌 **Purpose:** Diagnose and repair drift against the **currently installed** WorkspaceSync version — never installs a newer package (see [`update`](#12-workspace-sync-update) for that). Checks configuration integrity (migrating a legacy field name if found, without changing its value), reconciles each installed agent's skills back to the current version's defaults (restoring hand-edited, deleted, or never-fully-installed skill files), and checks local directory existence and SSH connectivity to linked VPS hosts. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
+> 📌 **Purpose:** Diagnose and repair drift against the **currently installed** WorkspaceSync version — never installs a newer package (see [`update`](#12-workspace-sync-update) for that). Checks configuration integrity (migrating a legacy field name if found, without changing its value), reconciles each installed agent's skills back to the current version's defaults (restoring hand-edited, deleted, or never-fully-installed skill files), checks local directory existence and SSH connectivity to linked VPS hosts, and — for every linked environment that connects successfully — probes whether `remotePath` itself contains a `.git` directory, warning (with the likely correct subdirectory named) when it doesn't but a child directory does. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
 >
 > 💻 **Syntax:**
 >
