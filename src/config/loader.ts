@@ -73,6 +73,45 @@ export function loadConfig(cwd: string = process.cwd()): FullConfig {
   };
 }
 
+// Detects on-disk config using a field name from a prior schema version, without going
+// through the zod schema (which already normalizes it in memory on every load — this
+// checks the RAW file so callers can decide whether a migration write is actually needed,
+// rather than rewriting the file unconditionally on every run).
+//
+// Currently detects: `sshAlias` (renamed to `sshAliasOrHost`). Add further checks here as
+// the schema evolves — each one purely additive, so old configs never need multiple hops.
+export function configHasLegacyFields(cwd: string = process.cwd()): boolean {
+  const environmentsPath = path.join(getConfigDir(cwd), "environments.json");
+  if (!fs.existsSync(environmentsPath)) return false;
+
+  let raw: any;
+  try {
+    raw = JSON.parse(fs.readFileSync(environmentsPath, "utf-8"));
+  } catch {
+    return false; // Unparseable — loadConfig() will surface this as a real error elsewhere.
+  }
+
+  for (const projectEnvs of Object.values(raw) as any[]) {
+    for (const envKey of ["testing", "production"]) {
+      const env = projectEnvs?.[envKey];
+      if (env && typeof env === "object" && "sshAlias" in env && !("sshAliasOrHost" in env)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Migrates on-disk config to the current schema by round-tripping it through
+// loadConfig (which normalizes legacy field names) and saveConfig (which persists the
+// normalized shape). Safe to call unconditionally: a no-op when nothing needs migrating,
+// since the round-trip is idempotent — but callers should still prefer to check
+// configHasLegacyFields() first so they only report/write when something actually changed.
+export function migrateConfig(cwd: string = process.cwd()): void {
+  const config = loadConfig(cwd);
+  saveConfig(config, cwd);
+}
+
 export function saveConfig(config: Partial<FullConfig>, cwd: string = process.cwd()): void {
   const configDir = getConfigDir(cwd);
   if (!fs.existsSync(configDir)) {

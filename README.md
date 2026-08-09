@@ -165,21 +165,29 @@ workspace-sync --version
 
 ---
 
-## 🔄 Update
+## 🔄 Update vs. Doctor
 
-To update the WorkspaceSync **npm package** to the latest published version, use npm:
+WorkspaceSync has two related but distinct commands — `update` fetches a new package version; `doctor` repairs drift against whatever version is already installed:
 
 ```bash
-npm install workspace-sync@latest
+workspace-sync update
 ```
 
-If you installed it globally (as in [Installation](#-installation) above), add `-g`:
+`update` **is** the command that upgrades the npm package (it runs `npm install -g workspace-sync@latest` for you), then brings this project's skills, MCP config, and configuration schema in sync with whatever version that leaves you on. If a newer version was just installed, skill/config syncing is deferred to the next run — a running process can't hot-swap its own already-loaded code — so **run `workspace-sync update` a second time** to complete the sync; if you were already on the latest version, it syncs immediately in one run.
+
+```bash
+workspace-sync doctor
+```
+
+`doctor` never installs a new package version — it only repairs drift against the **currently installed** version's defaults: skills that were hand-edited, deleted, or never finished installing are restored; a legacy configuration field is migrated safely. It's the command to run any time something looks off, without risking a version change.
+
+**Both commands guarantee your project-specific settings are never touched** — registered projects, environment links, and policies survive untouched (schema migrations only rename/normalize a field, never change its value). Pass `--check-only` to either command to see what would change without writing anything, or `--offline` to skip the published-version check.
+
+If you'd rather update the npm package by hand instead of through `workspace-sync update`, that also works:
 
 ```bash
 npm install -g workspace-sync@latest
 ```
-
-This is the npm package update command — WorkspaceSync has no CLI update command of its own. After updating the package, run `workspace-sync doctor` in each project: it detects stale skills and re-syncs them to the new version for you.
 
 ---
 
@@ -251,10 +259,11 @@ All commands are executed from your workspace root directory. Most users only ne
 | [`workspace-sync rename-project`](#5-workspace-sync-rename-project)   | Rename an existing registered project configuration.                      |
 | [`workspace-sync link-testing`](#6-workspace-sync-link-testing)       | Link a project's Testing VPS environment via an SSH alias or hostname.    |
 | [`workspace-sync link-production`](#7-workspace-sync-link-production) | Link a project's Production VPS environment via an SSH alias or hostname (read-only). |
-| [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Run diagnostics on local paths and SSH host connectivity.                 |
+| [`workspace-sync doctor`](#8-workspace-sync-doctor)                   | Repair drift (skills, config schema) against the currently installed version; check local paths and SSH connectivity. Never installs a new package. |
 | [`workspace-sync install "agent"`](#9-workspace-sync-install)         | Write MCP settings and deploy skills for a specific AI agent (see [table](#-agent-installation)). |
 | [`workspace-sync undo`](#10-workspace-sync-undo)                      | Roll back the last reversible configuration change in one step.           |
 | [`workspace-sync mcp`](#11-workspace-sync-mcp)                        | Start the stdio Model Context Protocol (MCP) server for AI connections.   |
+| [`workspace-sync update`](#12-workspace-sync-update)                  | Install the latest published package, then repair drift (skills, config schema) against it — see [🔄 Update vs. Doctor](#-update-vs-doctor). |
 
 ---
 
@@ -438,13 +447,21 @@ All commands are executed from your workspace root directory. Most users only ne
 
 > ### 8. `workspace-sync doctor`
 >
-> 📌 **Purpose:** Perform a self-diagnostic check on configuration integrity, local directory existence, and SSH connectivity to linked VPS hosts.
+> 📌 **Purpose:** Diagnose and repair drift against the **currently installed** WorkspaceSync version — never installs a newer package (see [`update`](#12-workspace-sync-update) for that). Checks configuration integrity (migrating a legacy field name if found, without changing its value), reconciles each installed agent's skills back to the current version's defaults (restoring hand-edited, deleted, or never-fully-installed skill files), and checks local directory existence and SSH connectivity to linked VPS hosts. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
 >
 > 💻 **Syntax:**
 >
 > ```bash
 > workspace-sync doctor
 > ```
+>
+> ⚙️ **Options:**
+>
+> - `--check-only`: Report drift without repairing anything.
+> - `--offline`: Skip the (informational-only) check for a newer published version.
+>
+> 💡 **Note:**
+> Safe to run anytime — it's read-only for project-specific settings and only rewrites skill files/MCP config back to the current version's defaults.
 
 ---
 
@@ -470,7 +487,7 @@ All commands are executed from your workspace root directory. Most users only ne
 > ```
 >
 > 💡 **Note:**
-> Merges into any existing MCP config file rather than overwriting it, and is safe to re-run after an upgrade to refresh skills (`workspace-sync doctor` warns if they're stale). A per-agent subcommand form also exists (`workspace-sync "agent" install`, e.g. `workspace-sync claude install`) but has been unreliable over `npx` in some environments — prefer `install "agent"` shown above.
+> Merges into any existing MCP config file rather than overwriting it, and is safe to re-run any time (`workspace-sync doctor` and `workspace-sync update` also refresh skills, without you needing to name the agent again). A per-agent subcommand form also exists (`workspace-sync "agent" install`, e.g. `workspace-sync claude install`) but has been unreliable over `npx` in some environments — prefer `install "agent"` shown above.
 
 ---
 
@@ -509,6 +526,26 @@ All commands are executed from your workspace root directory. Most users only ne
 >
 > 💡 **Note:**
 > This command is invoked automatically by VS Code or your MCP client via `.vscode/mcp.json`. Do not run manually during normal usage.
+
+---
+
+> ### 12. `workspace-sync update`
+>
+> 📌 **Purpose:** Install the **latest published WorkspaceSync version**, then run the same drift repair `doctor` does (skills + configuration schema) against that new version. See [🔄 Update vs. Doctor](#-update-vs-doctor) for the full distinction from `doctor`.
+>
+> 💻 **Syntax:**
+>
+> ```bash
+> workspace-sync update
+> ```
+>
+> ⚙️ **Options:**
+>
+> - `--check-only`: Report what would change without installing or writing anything.
+> - `--offline`: Skip the npm registry check; only sync skills/config against whatever version is currently installed.
+>
+> 💡 **Note:**
+> If a newer version was just installed, skill/config syncing is deferred to the next run — a running Node process can't hot-swap its own already-loaded code — so run `workspace-sync update` a second time to complete the sync. If you were already on the latest version, it syncs immediately in one run. Registered projects, environment links, and policies are never touched beyond a safe schema migration.
 
 ---
 

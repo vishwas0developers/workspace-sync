@@ -244,7 +244,7 @@ test("`doctor` warns when installed skills are stale relative to the running CLI
     // --offline --check-only keeps this test hermetic: no npm registry lookup (slow and
     // flaky) and no auto-repair, so the assertion sees the stale state it set up.
     const output = runCli(["doctor", "--offline", "--check-only"], scratch);
-    assert.ok(/skills at .* are from v0\.0\.1/.test(output), "expected a stale-skills warning from doctor");
+    assert.ok(/drifted from defaults.*v0\.0\.1.*→/.test(output), "expected a stale-skills warning from doctor");
     assert.ok(
       fs.readFileSync(path.join(scratch, ".agents", "skills", ".workspace-sync-version"), "utf-8").trim() === "0.0.1",
       "--check-only must not modify anything"
@@ -268,7 +268,7 @@ test("`doctor` auto-repairs stale skills and re-stamps them to the current versi
 
     const output = runCli(["doctor", "--offline"], scratch);
 
-    assert.ok(/Re-syncing skills for: claude/.test(output), "expected doctor to announce the re-sync");
+    assert.ok(/Reconciling skills for: claude/.test(output), "expected doctor to announce the reconciliation");
     assert.strictEqual(
       fs.readFileSync(stampPath, "utf-8").trim(),
       pkg.version,
@@ -277,6 +277,124 @@ test("`doctor` auto-repairs stale skills and re-stamps them to the current versi
     assert.ok(fs.existsSync(skillPath), "expected the deleted skill to be restored");
     // Claude must be repaired in its own native directory, never the generic fallback.
     assert.ok(!fs.existsSync(path.join(scratch, ".agents")), "must not write to .agents for Claude Code");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` detects a hand-edited skill file even when the version stamp still matches", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-content-drift-"));
+  try {
+    runCli(["setup"], scratch);
+    runCli(["install", "claude"], scratch);
+
+    // Only the skill content is altered — the stamp is untouched and still matches the
+    // running version, so a version-stamp-only check (the old implementation) would miss
+    // this entirely.
+    const skillPath = path.join(scratch, ".claude", "skills", "workspace-sync-status", "SKILL.md");
+    const canonical = fs.readFileSync(skillPath, "utf-8");
+    fs.appendFileSync(skillPath, "\nrogue instructions injected\n");
+    const stampPath = path.join(scratch, ".claude", "skills", ".workspace-sync-version");
+    assert.strictEqual(fs.readFileSync(stampPath, "utf-8").trim(), pkg.version, "stamp should still read current version");
+
+    const checkOutput = runCli(["doctor", "--offline", "--check-only"], scratch);
+    assert.ok(
+      /changed from default: workspace-sync-status/.test(checkOutput),
+      "expected doctor to flag the specific modified skill by name"
+    );
+
+    runCli(["doctor", "--offline"], scratch);
+    assert.strictEqual(
+      fs.readFileSync(skillPath, "utf-8"),
+      canonical,
+      "expected doctor to restore the skill to its canonical content"
+    );
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` flags deprecated skill directories left behind as drift", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-deprecated-"));
+  try {
+    runCli(["setup"], scratch);
+    runCli(["install", "claude"], scratch);
+
+    const deprecatedDir = path.join(scratch, ".claude", "skills", "workspace-sync-inspect-testing");
+    fs.mkdirSync(deprecatedDir, { recursive: true });
+    fs.writeFileSync(path.join(deprecatedDir, "SKILL.md"), "stale\n");
+
+    const output = runCli(["doctor", "--offline"], scratch);
+    assert.ok(/deprecated present: workspace-sync-inspect-testing/.test(output), "expected drift to name the deprecated skill");
+    assert.ok(!fs.existsSync(deprecatedDir), "expected doctor to remove the deprecated skill directory");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor` migrates a legacy 'sshAlias' config in-place, preserving projects and policies", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-migrate-"));
+  try {
+    runCli(["setup"], scratch);
+    fs.mkdirSync(path.join(scratch, "app"));
+    runCli(["add-project", "app", "./app"], scratch);
+    runCli(["link-testing", "app", "placeholder-host", "/srv/placeholder"], scratch);
+
+    // Overwrite with a legacy-shaped environments.json, as if written by a pre-rename version.
+    fs.writeFileSync(
+      path.join(scratch, ".workspace-sync", "environments.json"),
+      JSON.stringify({ app: { testing: { sshAlias: "legacy-host", remotePath: "/srv/test" } } })
+    );
+    const policiesBefore = fs.readFileSync(path.join(scratch, ".workspace-sync", "policies.json"), "utf-8");
+
+    // "legacy-host" doesn't resolve, so the SSH connectivity check further down doctor's
+    // report fails and doctor exits non-zero — expected and irrelevant to what this test
+    // is verifying (the migration), so tolerate a non-zero exit rather than treat it as a
+    // command failure.
+    let output;
+    try {
+      output = runCli(["doctor", "--offline"], scratch);
+    } catch (err) {
+      output = (err.stdout || "") + (err.stderr || "");
+    }
+    assert.ok(/Migrated .*sshAlias.*sshAliasOrHost/.test(output), "expected doctor to announce the migration");
+
+    const envs = JSON.parse(
+      fs.readFileSync(path.join(scratch, ".workspace-sync", "environments.json"), "utf-8")
+    );
+    assert.strictEqual(envs.app.testing.sshAliasOrHost, "legacy-host");
+    assert.strictEqual(envs.app.testing.remotePath, "/srv/test");
+
+    const policiesAfter = fs.readFileSync(path.join(scratch, ".workspace-sync", "policies.json"), "utf-8");
+    assert.deepStrictEqual(
+      JSON.parse(policiesAfter),
+      JSON.parse(policiesBefore),
+      "policies.json content must be unchanged by an environments-only migration"
+    );
+
+    // Re-running doctor must be a no-op — migration is idempotent.
+    let secondRun;
+    try {
+      secondRun = runCli(["doctor", "--offline"], scratch);
+    } catch (err) {
+      secondRun = (err.stdout || "") + (err.stderr || "");
+    }
+    assert.ok(!/Migrated/.test(secondRun), "a second doctor run should find nothing left to migrate");
+    assert.ok(/Configuration schema is current/.test(secondRun));
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("`doctor --check-only` never installs a package update or writes any file", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ws-doctor-nopackage-"));
+  try {
+    runCli(["setup"], scratch);
+    runCli(["install", "claude"], scratch);
+    const output = runCli(["doctor", "--offline", "--check-only"], scratch);
+    // Doctor must never itself run `npm install` — that responsibility belongs to
+    // `update` only. Its own message must direct the user there instead.
+    assert.ok(!/npm install -g/.test(output), "doctor must not suggest or run npm install itself");
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

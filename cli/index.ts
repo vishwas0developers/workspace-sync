@@ -3,7 +3,7 @@ import { Command } from "commander";
 import * as fs from "fs";
 import * as path from "path";
 import chalk from "chalk";
-import { loadConfig, saveConfig, getConfigDir } from "../src/config/loader";
+import { loadConfig, saveConfig, getConfigDir, configHasLegacyFields, migrateConfig, FullConfig } from "../src/config/loader";
 import { generateAgentMemory } from "../src/memory/generator";
 import { executeSSHCommand } from "../src/ssh/client";
 import { getLocalGitInfo } from "../src/tools/local";
@@ -13,6 +13,7 @@ import {
   describeAgent,
   isSkillsOnlyAgent,
   resolveSkillsDir,
+  getSkillDrift,
   SUPPORTED_AGENTS,
   PLATFORMS,
 } from "../install/index";
@@ -541,12 +542,139 @@ function installLatestPackage(): boolean {
   return true;
 }
 
+interface ReconcileResult {
+  problems: number;
+  warnings: number;
+  staleAgents: string[];
+  configMigrated: boolean;
+}
+
+// Brings this project's configuration schema and installed agents' skills back in line
+// with the currently running package version's defaults, WITHOUT touching any
+// project-specific values (registered projects, environment links, policies). Shared by
+// `doctor` (repair drift against whatever version is currently installed) and `update`
+// (repair drift right after fetching a newer version). Only the package-fetch step
+// differs between the two commands; this is the "make everything else match" step both
+// need afterward.
+function reconcileProject(
+  config: FullConfig,
+  cwd: string,
+  options: { checkOnly: boolean }
+): ReconcileResult {
+  let problems = 0;
+  let warnings = 0;
+
+  // --- Configuration schema migration -------------------------------------
+  // Purely additive: normalizes field names renamed by a later schema version (e.g.
+  // sshAlias -> sshAliasOrHost). Every other value — projects, paths, policies, and the
+  // renamed field's own value — is carried over unchanged. loadConfig() already accepts
+  // both names, so this only affects what's persisted on disk, never what's readable.
+  let configMigrated = false;
+  if (configHasLegacyFields(cwd)) {
+    if (options.checkOnly) {
+      console.log(
+        chalk.yellow(
+          `⚠ .workspace-sync/environments.json uses a legacy field name (sshAlias). Run without --check-only to migrate it to sshAliasOrHost — no values will be changed, only the field name.`
+        )
+      );
+      warnings++;
+    } else {
+      migrateConfig(cwd);
+      configMigrated = true;
+      console.log(
+        chalk.green(
+          `✓ Migrated .workspace-sync/environments.json to the current schema (sshAlias → sshAliasOrHost); existing values preserved.`
+        )
+      );
+    }
+  } else {
+    console.log(chalk.green(`✓ Configuration schema is current.`));
+  }
+
+  // --- Agent skill drift -----------------------------------------------------
+  // Each agent has its own native skills directory (e.g. .claude/skills for Claude Code,
+  // .codex/skills for Codex) — check every agent actually installed in THIS project, not
+  // a single hardcoded generic path. The manifest is a plain JSON file a user could
+  // hand-edit, so drop anything that isn't a supported agent rather than letting it fail
+  // later during a re-sync.
+  const recordedAgents = getInstalledAgents(cwd);
+  const unknownAgents = recordedAgents.filter((a) => !SUPPORTED_AGENTS.includes(a));
+  const installedAgents = recordedAgents.filter((a) => SUPPORTED_AGENTS.includes(a));
+  if (unknownAgents.length > 0) {
+    console.log(
+      chalk.yellow(
+        `⚠ Ignoring unrecognized agent(s) in .workspace-sync/installed-agents.json: ${unknownAgents.join(", ")}`
+      )
+    );
+    warnings++;
+  }
+
+  const staleAgents: string[] = [];
+  if (installedAgents.length === 0) {
+    console.log(
+      chalk.yellow(`⚠ No agents installed in this project yet. Run 'workspace-sync install [agent]' to set one up.`)
+    );
+    warnings++;
+  } else {
+    for (const agentId of installedAgents) {
+      const info = describeAgent(agentId);
+      // Content-level comparison against the current package's skill definitions — not
+      // just a version-stamp check, so a skill file that was hand-edited or deleted (even
+      // with a matching stamp) is still caught and restored to the default.
+      const drift = getSkillDrift(agentId, cwd);
+      if (!drift.isStale) {
+        console.log(
+          chalk.green(`✓ ${info.label}: skills at ${drift.skillsDir} match the current defaults (v${drift.installedVersion})`)
+        );
+        continue;
+      }
+
+      staleAgents.push(agentId);
+      const reasons: string[] = [];
+      if (drift.missingDir) reasons.push("directory missing");
+      if (drift.missingStamp) reasons.push("no version stamp");
+      if (drift.installedVersion && drift.installedVersion !== pkg.version) {
+        reasons.push(`v${drift.installedVersion} → v${pkg.version}`);
+      }
+      if (drift.missingSkills.length > 0) reasons.push(`missing: ${drift.missingSkills.join(", ")}`);
+      if (drift.modifiedSkills.length > 0) reasons.push(`changed from default: ${drift.modifiedSkills.join(", ")}`);
+      if (drift.deprecatedPresent.length > 0) reasons.push(`deprecated present: ${drift.deprecatedPresent.join(", ")}`);
+      console.log(chalk.yellow(`⚠ ${info.label}: skills at ${drift.skillsDir} drifted from defaults (${reasons.join("; ")})`));
+    }
+
+    if (staleAgents.length > 0) {
+      if (options.checkOnly) {
+        console.log(chalk.gray(`  → Run without --check-only to reconcile the agent(s) above to the current defaults.`));
+        warnings += staleAgents.length;
+      } else {
+        console.log(chalk.bold(`\nReconciling skills for: ${staleAgents.join(", ")}`));
+        for (const agentId of staleAgents) {
+          try {
+            // installWorkspaceSync rewrites every default skill file and the MCP entry —
+            // it never touches .workspace-sync/ project config, so this cannot damage
+            // project-specific settings even though it fully resets the skill content.
+            installWorkspaceSync(cwd, agentId);
+          } catch (err: any) {
+            console.error(chalk.red(`  ✗ Failed to reconcile ${agentId}: ${err.message}`));
+            problems++;
+          }
+        }
+        // AGENT_MEMORY.md is generated from config and can drift after an upgrade too.
+        generateAgentMemory(config, cwd);
+        console.log(chalk.green("✓ Regenerated AGENT_MEMORY.md"));
+      }
+    }
+  }
+
+  return { problems, warnings, staleAgents, configMigrated };
+}
+
 program
   .command("doctor")
   .description(
-    "Diagnose and auto-repair: checks config, npm package freshness, agent skill freshness, and SSH connectivity — updating the package and re-syncing stale skills automatically. Use --check-only to report without changing anything."
+    "Diagnose and repair drift: reconciles this project's skills and configuration schema back to the currently installed version's defaults, and checks project paths/SSH connectivity — WITHOUT touching project-specific settings or installing a newer package (that's 'workspace-sync update'). Use --check-only to report without changing anything."
   )
-  .option("--check-only", "Report problems without installing updates or re-syncing skills")
+  .option("--check-only", "Report drift without repairing anything")
   .option("--offline", "Skip the network check for a newer published package version")
   .action(async (options) => {
     // Problems are counted rather than thrown so the report always runs to completion,
@@ -582,12 +710,11 @@ program
       console.log(chalk.green("✓ Config directory present (.workspace-sync)"));
       console.log(chalk.green(`✓ Workspace defined: ${config.workspace.name}`));
 
-      // --- Package freshness -------------------------------------------------
-      // Compare the running version against the latest published on npm. If a newer
-      // one exists, install it. Note the running process still executes the OLD code
-      // afterward, so skills must NOT be re-synced in the same run — they would be
-      // written from the old version. We defer skill sync to the next run instead.
-      let packageWasUpdated = false;
+      // --- Package freshness (informational only) -----------------------------
+      // Doctor reports a newer published version but never installs it — that's
+      // 'workspace-sync update's job. Keeping the two separate means doctor stays a pure,
+      // fast, idempotent drift-repair command you can run anytime without it reaching
+      // out to npm to change what's installed.
       if (options.offline) {
         console.log(chalk.gray(`- Package version: v${pkg.version} (skipped update check: --offline)`));
       } else {
@@ -598,106 +725,20 @@ program
           );
         } else if (compareVersions(latest, pkg.version) <= 0) {
           // Equal, or the running build is ahead of the registry (local dev build).
-          // Either way there is nothing to install — never downgrade.
           console.log(chalk.green(`✓ Package is up to date (v${pkg.version}; latest published is v${latest})`));
-        } else if (options.checkOnly) {
+        } else {
           console.log(
             chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}).`)
           );
-          console.log(chalk.gray(`  → Run 'npm install -g ${pkg.name}@latest' to update.`));
+          console.log(chalk.gray(`  → Run 'workspace-sync update' to install it and sync this project to it.`));
           warnings++;
-        } else {
-          console.log(
-            chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}). Updating...`)
-          );
-          packageWasUpdated = installLatestPackage();
-          if (!packageWasUpdated) problems++;
         }
       }
 
-      // --- Agent skill freshness ---------------------------------------------
-      // Each agent has its own native skills directory (e.g. .claude/skills for Claude
-      // Code, .codex/skills for Codex) — check every agent actually installed in THIS
-      // project, not a single hardcoded generic path, so this report reflects reality
-      // per agent instead of silently missing agents that installed to their own folder.
-      // The manifest is a plain JSON file a user could hand-edit, so drop anything that
-      // isn't a supported agent rather than letting it fail later during a re-sync.
-      const recordedAgents = getInstalledAgents(process.cwd());
-      const unknownAgents = recordedAgents.filter((a) => !SUPPORTED_AGENTS.includes(a));
-      const installedAgents = recordedAgents.filter((a) => SUPPORTED_AGENTS.includes(a));
-      if (unknownAgents.length > 0) {
-        console.log(
-          chalk.yellow(`⚠ Ignoring unrecognized agent(s) in .workspace-sync/installed-agents.json: ${unknownAgents.join(", ")}`)
-        );
-        warnings++;
-      }
-
-      if (installedAgents.length === 0) {
-        console.log(
-          chalk.yellow(
-            `⚠ No agents installed in this project yet. Run 'workspace-sync install [agent]' to set one up.`
-          )
-        );
-        warnings++;
-      } else if (packageWasUpdated) {
-        // Deliberately skipped: this process is still running the pre-update code, so
-        // syncing now would deploy the OLD skills and stamp them as current.
-        console.log(
-          chalk.cyan(
-            `\nSkills for ${installedAgents.join(", ")} will be synced on the next run — re-run 'workspace-sync doctor' now that the package is updated.`
-          )
-        );
-      } else {
-        const staleAgents: string[] = [];
-        for (const agentId of installedAgents) {
-          const info = describeAgent(agentId);
-          const skillsDir = resolveSkillsDir(agentId, process.cwd());
-          const versionStampPath = path.join(skillsDir, ".workspace-sync-version");
-          if (!fs.existsSync(skillsDir)) {
-            console.log(
-              chalk.yellow(`⚠ ${info.label}: expected skills at ${skillsDir} but the directory is missing.`)
-            );
-            staleAgents.push(agentId);
-          } else if (!fs.existsSync(versionStampPath)) {
-            console.log(
-              chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} have no version stamp (pre-upgrade).`)
-            );
-            staleAgents.push(agentId);
-          } else {
-            const installedVersion = fs.readFileSync(versionStampPath, "utf-8").trim();
-            if (installedVersion !== pkg.version) {
-              console.log(
-                chalk.yellow(`⚠ ${info.label}: skills at ${skillsDir} are from v${installedVersion} — current CLI is v${pkg.version}.`)
-              );
-              staleAgents.push(agentId);
-            } else {
-              console.log(chalk.green(`✓ ${info.label}: skills at ${skillsDir} are up to date (v${installedVersion})`));
-            }
-          }
-        }
-
-        if (staleAgents.length > 0) {
-          if (options.checkOnly) {
-            console.log(
-              chalk.gray(`  → Run 'workspace-sync install <agent>' for each agent above to refresh.`)
-            );
-            warnings += staleAgents.length;
-          } else {
-            console.log(chalk.bold(`\nRe-syncing skills for: ${staleAgents.join(", ")}`));
-            for (const agentId of staleAgents) {
-              try {
-                installWorkspaceSync(process.cwd(), agentId);
-              } catch (err: any) {
-                console.error(chalk.red(`  ✗ Failed to re-sync ${agentId}: ${err.message}`));
-                problems++;
-              }
-            }
-            // AGENT_MEMORY.md is generated from config and can drift after an upgrade too.
-            generateAgentMemory(config);
-            console.log(chalk.green("✓ Regenerated AGENT_MEMORY.md"));
-          }
-        }
-      }
+      // --- Configuration + skill drift, repaired against the CURRENT version's defaults ---
+      const reconciled = reconcileProject(config, process.cwd(), { checkOnly: !!options.checkOnly });
+      problems += reconciled.problems;
+      warnings += reconciled.warnings;
 
       const projects = Object.keys(config.projects);
       console.log(`✓ Projects registered: ${projects.length}`);
@@ -784,6 +825,126 @@ program
     }
   });
 
+program
+  .command("update")
+  .description(
+    "Upgrade WorkspaceSync to the latest published version, then bring this project's skills, MCP config, and configuration schema in sync with it. Unlike 'doctor' (repairs drift against whatever version is CURRENTLY installed), 'update' fetches whatever is newest first. Existing project-specific settings are always preserved. Use --check-only to report without changing anything."
+  )
+  .option("--check-only", "Report what would change without installing or writing anything")
+  .option("--offline", "Skip the npm registry check; only sync skills/config against the currently installed version")
+  .action(async (options) => {
+    let problems = 0;
+    let warnings = 0;
+
+    console.log(chalk.bold("\nWorkspaceSync Update"));
+    console.log(chalk.gray("==========================================="));
+
+    try {
+      const configDir = getConfigDir();
+      if (!fs.existsSync(configDir)) {
+        console.log(chalk.red(`✗ No WorkspaceSync configuration found at ${configDir}`));
+        console.log(chalk.gray("  → Run 'workspace-sync setup' to initialize this project."));
+        process.exitCode = 1;
+        return;
+      }
+
+      // --- Package fetch ---------------------------------------------------
+      let packageWasUpdated = false;
+      if (options.offline) {
+        console.log(chalk.gray(`- Package version: v${pkg.version} (skipped update check: --offline)`));
+      } else {
+        const latest = getLatestPublishedVersion();
+        if (!latest) {
+          console.log(
+            chalk.yellow(`⚠ Could not reach npm to check for a newer version — syncing this project against the currently installed v${pkg.version}.`)
+          );
+          warnings++;
+        } else if (compareVersions(latest, pkg.version) <= 0) {
+          console.log(chalk.green(`✓ Already on the latest published version (v${pkg.version}).`));
+        } else {
+          if (options.checkOnly) {
+            console.log(
+              chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}).`)
+            );
+            warnings++;
+          } else {
+            console.log(
+              chalk.yellow(`⚠ A newer WorkspaceSync is published: v${latest} (installed: v${pkg.version}). Installing...`)
+            );
+            packageWasUpdated = installLatestPackage();
+            if (!packageWasUpdated) problems++;
+          }
+        }
+      }
+
+      if (options.checkOnly) {
+        // --check-only never writes anything, but it should still be a complete report —
+        // also show what would be reconciled if 'update' were run for real.
+        let config;
+        try {
+          config = loadConfig();
+        } catch (err: any) {
+          console.log(chalk.red(`✗ Configuration present but unreadable: ${err.message}`));
+          problems++;
+          config = null;
+        }
+        if (config) {
+          const reconciled = reconcileProject(config, process.cwd(), { checkOnly: true });
+          problems += reconciled.problems;
+          warnings += reconciled.warnings;
+        }
+
+        console.log("");
+        if (problems === 0 && warnings === 0) {
+          console.log(chalk.bold.green("✓ Nothing to update."));
+        } else {
+          console.log(
+            chalk.bold.yellow(`Completed with ${problems} error(s) and ${warnings} warning(s). Nothing was changed (--check-only).`)
+          );
+        }
+        if (problems > 0) process.exitCode = 1;
+        return;
+      }
+
+      if (packageWasUpdated) {
+        // This process is still running the code that was loaded at startup — a Node
+        // process cannot hot-swap its own already-imported modules — so syncing skills
+        // now would write the OLD skill content and stamp it as current. Deferring to a
+        // fresh invocation guarantees the sync step actually uses the new version's
+        // defaults, the same pattern 'doctor' used before this split.
+        console.log(
+          chalk.cyan(
+            `\nPackage updated to a newer version. Run 'workspace-sync update' once more to sync this project's skills and configuration to it.`
+          )
+        );
+        console.log("");
+        console.log(chalk.bold.green(`✓ Package updated. Skill/config sync deferred to the next run.`));
+        return;
+      }
+
+      // Already on the latest version (or offline/unreachable, in which case the
+      // currently loaded code is the best available) — safe to reconcile right now.
+      const config = loadConfig();
+      const reconciled = reconcileProject(config, process.cwd(), { checkOnly: false });
+      problems += reconciled.problems;
+      warnings += reconciled.warnings;
+
+      console.log("");
+      if (problems === 0 && warnings === 0) {
+        console.log(chalk.bold.green("✓ Project is fully up to date."));
+      } else if (problems === 0) {
+        console.log(chalk.bold.yellow(`Completed with ${warnings} warning(s) and no errors.`));
+      } else {
+        console.log(chalk.bold.red(`Completed with ${problems} error(s) and ${warnings} warning(s).`));
+        process.exitCode = 1;
+      }
+      console.log("");
+    } catch (err: any) {
+      console.error(chalk.red(`Update Error: ${err.message}`));
+      process.exitCode = 1;
+    }
+  });
+
 // Agent-facing reference block, appended to `--help` / `help` output. Plain text
 // (no chalk colors) so it stays parseable by an AI agent reading the help output
 // programmatically. An agent should find its own name below to learn its exact
@@ -815,8 +976,20 @@ function buildAgentReferenceHelp(): string {
   lines.push("  Safe to re-run: merges into existing MCP config, refreshes skills to current version.");
   lines.push("");
   lines.push("workspace-sync doctor");
-  lines.push("  Diagnostics: verifies local project paths, tests SSH connectivity to linked Testing/");
-  lines.push("  Production hosts, and warns when installed skills are stale relative to this CLI version.");
+  lines.push("  Diagnose and REPAIR DRIFT: reconciles this project's skills and configuration schema");
+  lines.push("  back to the CURRENTLY INSTALLED version's defaults, and checks project paths/SSH");
+  lines.push("  connectivity. Never installs a newer package (see 'update' below) and never touches");
+  lines.push("  project-specific settings (registered projects, environment links, policies) beyond a");
+  lines.push("  safe, value-preserving schema migration. Use --check-only to report without changing");
+  lines.push("  anything, --offline to skip the (informational-only) published-version check.");
+  lines.push("");
+  lines.push("workspace-sync update");
+  lines.push("  Upgrade the npm package to the LATEST PUBLISHED version, then run the same drift-repair");
+  lines.push("  'doctor' does (skills + config schema) against that new version. If a newer package was");
+  lines.push("  just installed, skill/config sync is deferred to the next run — a Node process can't");
+  lines.push("  hot-swap its own already-loaded code, so re-run 'workspace-sync update' once more to");
+  lines.push("  complete the sync. If already on the latest version, syncs immediately. Same --check-only");
+  lines.push("  / --offline options as doctor. This is the ONLY command that runs 'npm install'.");
   lines.push("");
   lines.push("workspace-sync status");
   lines.push("  Shows registered projects, their local Git status, and linked Testing/Production hosts.");
@@ -829,10 +1002,8 @@ function buildAgentReferenceHelp(): string {
   lines.push("-".repeat(78));
   lines.push("  1. workspace-sync setup                 (once per project)");
   lines.push("  2. workspace-sync install <your-agent>  (once per agent you use — see table below)");
-  lines.push("");
-  lines.push("To update the WorkspaceSync npm package itself, use npm — there is no CLI update command:");
-  lines.push("  npm install workspace-sync@latest       (or -g, if installed globally)");
-  lines.push("Then re-run 'workspace-sync install <your-agent>' to refresh that project's skills.");
+  lines.push("  3. workspace-sync update                (whenever you want the latest package + a synced project)");
+  lines.push("     workspace-sync doctor                 (anytime, to repair drift without changing versions)");
   lines.push("");
   lines.push("PER-AGENT REFERENCE");
   lines.push("-".repeat(78));
