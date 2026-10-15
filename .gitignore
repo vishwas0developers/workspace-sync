@@ -507,3 +507,4 @@ cookies_*.json
 *.sqlite3-*
 *.db-*
 *.db3-*
+security_audit/__pycache__/

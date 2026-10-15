@@ -29,7 +29,8 @@ test("`install claude` writes .mcp.json (not .vscode/mcp.json)", () => {
     const mcpPath = path.join(scratch, ".mcp.json");
     assert.ok(fs.existsSync(mcpPath), "expected .mcp.json to be written");
     const mcp = JSON.parse(fs.readFileSync(mcpPath, "utf-8"));
-    assert.strictEqual(mcp.mcpServers["workspace-sync"].command, "workspace-sync");
+    assert.strictEqual(mcp.mcpServers["workspace-sync"].command, "npx");
+    assert.deepStrictEqual(mcp.mcpServers["workspace-sync"].args, ["-y", "workspace-sync", "mcp"]);
 
     assert.ok(!fs.existsSync(path.join(scratch, ".vscode", "mcp.json")), "must not write .vscode/mcp.json for claude");
   } finally {
@@ -45,7 +46,8 @@ test("`install cursor` writes .cursor/mcp.json", () => {
     const mcpPath = path.join(scratch, ".cursor", "mcp.json");
     assert.ok(fs.existsSync(mcpPath), "expected .cursor/mcp.json to be written");
     const mcp = JSON.parse(fs.readFileSync(mcpPath, "utf-8"));
-    assert.strictEqual(mcp.mcpServers["workspace-sync"].command, "workspace-sync");
+    assert.strictEqual(mcp.mcpServers["workspace-sync"].command, "npx");
+    assert.deepStrictEqual(mcp.mcpServers["workspace-sync"].args, ["-y", "workspace-sync", "mcp"]);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
@@ -129,7 +131,8 @@ test("`install gemini` / `install antigravity` write to the user-home Gemini con
     runCli(["install", "gemini"], scratch, makeHomeOverrideEnv(fakeHome));
     const geminiMcp = path.join(fakeHome, ".gemini", "config", "mcp_config.json");
     assert.ok(fs.existsSync(geminiMcp), "expected ~/.gemini/config/mcp_config.json to be written");
-    assert.strictEqual(JSON.parse(fs.readFileSync(geminiMcp, "utf-8")).mcpServers["workspace-sync"].command, "workspace-sync");
+    assert.strictEqual(JSON.parse(fs.readFileSync(geminiMcp, "utf-8")).mcpServers["workspace-sync"].command, "npx");
+    assert.strictEqual(JSON.parse(fs.readFileSync(geminiMcp, "utf-8")).mcpServers["workspace-sync"].type, undefined);
 
     runCli(["install", "antigravity"], scratch, makeHomeOverrideEnv(fakeHome));
     const antigravityMcp = path.join(fakeHome, ".gemini", "antigravity-ide", "mcp_config.json");
@@ -146,7 +149,8 @@ test("`workspace-sync claude install` subcommand form writes .mcp.json just like
     runCli(["claude", "install"], scratch);
     const mcpPath = path.join(scratch, ".mcp.json");
     assert.ok(fs.existsSync(mcpPath), "expected .mcp.json to be written via subcommand form");
-    assert.strictEqual(JSON.parse(fs.readFileSync(mcpPath, "utf-8")).mcpServers["workspace-sync"].command, "workspace-sync");
+    assert.strictEqual(JSON.parse(fs.readFileSync(mcpPath, "utf-8")).mcpServers["workspace-sync"].command, "npx");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(mcpPath, "utf-8")).mcpServers["workspace-sync"].args, ["-y", "workspace-sync", "mcp"]);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

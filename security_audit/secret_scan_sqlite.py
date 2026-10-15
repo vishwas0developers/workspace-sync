@@ -118,7 +118,7 @@ def main(args):
  staged='--staged' in args;requested={p.replace('\\','/') for p in args if p!='--staged'}
  try:
   changed=set(git('diff','--cached','--name-only','--diff-filter=ACMR','-z').decode('utf-8',errors='surrogateescape').split('\x00')) if staged else None
-  records=git('ls-files','--stage','-z').split(b'\x00');found=set();bad=0
+  records=git('ls-files','--full-name','--stage','-z','--',':/').split(b'\x00');found=set();bad=0
   with IndexBlobs() as blobs:
    for record in records:
     if not record:continue

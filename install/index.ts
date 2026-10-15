@@ -204,7 +204,7 @@ export function resolveMcpConfigPath(agentId: AgentId, targetDir: string): strin
 
 // Writes/merges the WorkspaceSync stdio MCP server entry into the given JSON config file,
 // preserving any other servers already registered there.
-function writeMcpServerConfig(mcpConfigPath: string): void {
+function writeMcpServerConfig(mcpConfigPath: string, agentId?: AgentId): void {
   const mcpDir = path.dirname(mcpConfigPath);
   if (!fs.existsSync(mcpDir)) {
     fs.mkdirSync(mcpDir, { recursive: true });
@@ -223,11 +223,17 @@ function writeMcpServerConfig(mcpConfigPath: string): void {
     mcpConfig.mcpServers = {};
   }
 
-  mcpConfig.mcpServers["workspace-sync"] = {
-    type: "stdio",
-    command: "workspace-sync",
-    args: ["mcp"],
+  const serverConfig: Record<string, any> = {
+    command: "npx",
+    args: ["-y", "workspace-sync", "mcp"],
   };
+
+  // Antigravity and Gemini reject the "type" property in mcp_config.json
+  if (agentId !== "antigravity" && agentId !== "gemini") {
+    serverConfig.type = "stdio";
+  }
+
+  mcpConfig.mcpServers["workspace-sync"] = serverConfig;
 
   fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
   console.log(`✓ Configured MCP server: ${mcpConfigPath}`);
@@ -252,7 +258,7 @@ function writeCodexMcpConfig(configPath: string): void {
     return;
   }
 
-  const entry = `\n[mcp_servers.workspace-sync]\ncommand = "workspace-sync"\nargs = ["mcp"]\n`;
+  const entry = `\n[mcp_servers.workspace-sync]\ncommand = "npx"\nargs = ["-y", "workspace-sync", "mcp"]\n`;
   fs.writeFileSync(configPath, existing.trimEnd() + "\n" + entry, "utf-8");
   console.log(`✓ Configured MCP server: ${configPath}`);
 }
@@ -544,7 +550,7 @@ export function installWorkspaceSync(targetDir: string = process.cwd(), agent?: 
     if (agentId === "codex") {
       writeCodexMcpConfig(mcpConfigPath);
     } else {
-      writeMcpServerConfig(mcpConfigPath);
+      writeMcpServerConfig(mcpConfigPath, agentId);
     }
   }
 
